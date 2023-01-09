@@ -72,7 +72,10 @@ public class TestDaemonDestroy {
         pb.environment().merge(envVar, Platform.jvmLibDir().toString(),
                                (x, y) -> y + File.pathSeparator + x);
 
-        OutputAnalyzer oa = new OutputAnalyzer(pb.start());
+        // Need to add libpthread location to LIBPATH
+        pb.environment().merge(envVar, "/usr/lib:/lib",(x, y) -> y + File.pathSeparator +  x);
+
+	OutputAnalyzer oa = new OutputAnalyzer(pb.start());
         oa.shouldHaveExitValue(0);
         oa.shouldNotContain("Error: T1 isAlive");
         oa.shouldContain("T1 finished");
