@@ -73,7 +73,7 @@ public class TestDaemonDestroy {
                                (x, y) -> y + File.pathSeparator + x);
 
         // Need to add libpthread location to LIBPATH
-        pb.environment().merge(envVar, "/usr/lib:/lib",(x, y) -> y + File.pathSeparator +  x);
+        pb.environment().merge(envVar, "/lib",(x, y) -> y + File.pathSeparator +  x);
 
 	OutputAnalyzer oa = new OutputAnalyzer(pb.start());
         oa.shouldHaveExitValue(0);
