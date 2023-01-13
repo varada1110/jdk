@@ -24,33 +24,30 @@
 #include <jni.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <pthread.h>
 
-JNIEnv* create_vm(JavaVM **jvm)
-{
-    JNIEnv* env;
-    JavaVMInitArgs args;
-    JavaVMOption options[1];
+void* run(void *arg){
 
-    char classpath[4096];
-    snprintf(classpath, sizeof classpath,
-             "-Djava.class.path=%s", getenv("CLASSPATH"));
-    options[0].optionString = classpath;
+  JavaVM *jvm;	
+  JNIEnv* env;
+  JavaVMInitArgs args;
+  JavaVMOption options[1];
 
-    args.version = JNI_VERSION_1_8;
-    args.nOptions = 1;
-    args.options = &options[0];
-    args.ignoreUnrecognized = 0;
+  char classpath[4096];
+  snprintf(classpath, sizeof classpath,
+           "-Djava.class.path=%s", getenv("CLASSPATH"));
+  options[0].optionString = classpath;
 
-    int ret = JNI_CreateJavaVM(jvm, (void**)&env, &args);
-    if (ret < 0) {
-      exit(10);
-    }
+  args.version = JNI_VERSION_1_8;
+  args.nOptions = 1;
+  args.options = &options[0];
+  args.ignoreUnrecognized = 0;
 
-    return env;
-}
+  int ret = JNI_CreateJavaVM(&jvm, (void**)&env, &args);
+  if (ret < 0) {
+    exit(10);
+  }
 
-
-void run(JNIEnv *env) {
   jclass test_class;
   jmethodID test_method;
 
@@ -65,15 +62,19 @@ void run(JNIEnv *env) {
   }
 
   (*env)->CallStaticVoidMethod(env, test_class, test_method);
+  return 0;
 }
 
 
-int main(int argc, char **argv)
+int main(int argc, char *argv[])
 {
-  JavaVM *jvm;
-  JNIEnv *env = create_vm(&jvm);
-
-  run(env);
-
-  return 0;
+   size_t adjusted_stack_size = 1024*1024;
+   pthread_t id;
+   pthread_attr_t attr;
+   pthread_attr_init(&attr);
+   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+   pthread_attr_setguardsize(&attr, 0);
+   pthread_attr_setstacksize(&attr, adjusted_stack_size);
+   pthread_create (&id,&attr,run,(void *)argv);
+   pthread_join(id,NULL);
 }
