@@ -254,8 +254,7 @@ void VM_Version::initialize() {
 
   // TODO: Provide implementation.
   if (UseAdler32Intrinsics) {
-    warning("Adler32Intrinsics not available on this CPU.");
-    FLAG_SET_DEFAULT(UseAdler32Intrinsics, false);
+    FLAG_SET_DEFAULT(UseAdler32Intrinsics, true);
   }
 
   // The AES intrinsic stubs require AES instruction support.

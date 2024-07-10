@@ -3650,6 +3650,256 @@ class StubGenerator: public StubCodeGenerator {
 // order of the elements in a vector initialization.
 #define ARRAY_TO_LXV_ORDER(e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15) e15, e14, e13, e12, e11, e10, e9, e8, e7, e6, e5, e4, e3, e2, e1, e0
 
+  
+  // Adler32 Intrinsic
+  address generate_updateBytesAdler32() {
+    __ align(CodeEntryAlignment);
+    StubCodeMark mark(this, "StubRoutines", "updateBytesAdler32");
+    address start = __ pc();
+
+    Label L_simple_by1_loop, L_nmax, L_nmax_loop, L_by16, L_by16_loop,
+                  L_by1_loop, L_do_mod, L_combine, L_by1, L_remainder_done;
+
+    Register adler  = R3;
+    Register s1     = R3;
+    Register s2     = R6;
+    Register buff   = R4;
+    Register len    = R5;
+    Register nmax  = R7;
+    Register base  = R8;
+    Register count = R9;
+    Register temp0 = R11;
+    Register tmp = R12;
+    Register temp1 = R13;
+    VectorRegister vbytes = VR0;
+    VectorRegister vs1acc = VR1;
+    VectorRegister vs2acc = VR2;
+    VectorRegister vtable = VR3;
+
+
+    uint64_t BASE = 0xfff1;
+    uint64_t NMAX = 0x15B0;
+
+    __ mr(base, BASE);
+    __ mr(nmax, NMAX);
+
+    // Load the address of _adler_table
+    __ load_const_optimized(temp0, (address) StubRoutines::ppc::_adler_table, tmp, false);
+    // Load data from temp0 to vector register vtable
+    __ lvx(vtable, 0, temp0);
+
+    // s1 initialised to lower 16 bits of adler
+    // s2 initialised to upper 16 bits of adler
+
+    __ rlwinm(s2, adler, 16, 0, 15);
+    __ andi(s1, adler, 0xFFFF);
+
+    // The pipelined loop needs at least 16 elements for 1 iteration
+    // It does check this, but it is more effective to skip to the cleanup loop
+
+    __ li(temp0, 16); // tempo = 16
+    __ cmplw(CCR1, len, temp0); // len>=temp0?
+    __ bge(CCR1, L_nmax); // bge -> greater than and equal, if true branch -L_nmax
+    __ beq(CCR1, L_combine); // if CCR1 == 0 goto L_combine
+
+    //loop body
+
+    __ bind(L_simple_by1_loop); //beginning of the loop
+    __ lbz(temp0, 0, buff); //  Load a byte from memory to temp0 by adding 1 to the register value
+    __ addi(buff, buff, 1);
+    __ add(s1, s1, temp0);  // s1 <- s1 + temp0
+    __ add(s2, s2, s1); // s2 <- s1 + s2
+    __ subi(len, len, 1);  // len <- len - 1
+    __ cmpwi(CCR0, 0, 1);   // Compare len with 0, set carry flag on greater than
+    __ blt(CCR0, L_simple_by1_loop); //  Branch if less than (carry flag is set)
+
+    // s1 % BASE
+
+   // __ sub(temp0, s1, base); // Subtract base from s1 and store in temp0
+   // __ cmpwi(CCR0, 0, 1); // Compare temp0 with 0, set carry flag on greater than
+   // __ mtctr(temp0);  // Move temp0 to Count Register (CTR)
+   // __ blt(CCR0, L_remainder_done);  // Branch if less than (carry flag is set, remainder in temp0)
+  //  __ mr(s1, temp0); // Otherwise, remainder is 0, so move temp0 (which is    0) to s1
+
+    // S2 % BASE
+
+    __ srwi(temp0, s2, 16);          // Right shift immediate `s1` by 16 bits and store in `temp0`
+    __ slwi(temp1, temp0, 4);         // Left shift immediate `temp0` by 4 bits and store in `temp1`
+    __ subf(temp1, temp1, temp0);    // Subtract `temp0` from `temp1` and store in `temp1`
+    __ add(s2, s2, temp1);           // Add `s1` with `temp1` and store in `temp1`
+
+    __ sub(temp0, s2, base);    //Subtract base from s1 and store in temp0
+    __ cmpwi(CCR0, temp0, 0);    //Compare temp0 with 0, set carry flag on greater than
+    __ mtctr(temp0);            //Move temp0 to Count Register (CTR)
+    __ blt(CCR0, L_remainder_done);   // Branch if less than (carry flag is set, remainder in temp0)
+    __ mr(s2, temp0);           //Otherwise, remainder is 0, so move temp0 (which is 0) to s1
+
+    __ b(L_combine);
+
+    __ bind(L_nmax);
+
+    // Subtract nmax from len and set flags
+    __ subf(len, nmax, len);
+    __ cmpeqb(CCR0, len, nmax);
+
+    // Subtract 16 from nmax and store in count
+    __ subi(count, nmax, 16);
+
+    // Branch to L_by16 if len is less than nmax
+    __ blt(CCR0, L_by16);
+
+    __ bind(L_nmax_loop);
+
+    generate_updateBytesAdler32_accum(s1, s2, buff, temp0, temp1,
+                                     vbytes, vs1acc, vs2acc, vtable);
+
+
+    __ subi(count, count, 16);        // Subtract 16 from count
+    __ cmplwi(CCR0, count, 0);                // Compare count with 0
+    __ bge(CCR0, L_nmax_loop);             // Branch to L_nmax_loop if count >= 0
+
+
+    // s1 = s1 % BASE
+    __ srwi(temp0, s1, 16);      // Right shift immediate `s1` by 16 bits and store in `temp0`
+    __ slwi(temp1, temp0, 4);    // Left shift immediate `temp0` by 4 bits and store in `temp1`
+    __ subf(temp1, temp1, temp0);    // Subtract `temp0` from `temp1` and store in `temp1`
+    __ add(temp1, s1, temp1);        // Add `s1` with `temp1` and store in `temp1`
+
+    __ srwi(temp0, temp1, 16);       // Right shift immediate `s1` by 16 bits and store in `temp0`
+    __ slwi(s1, temp0, 4);           // Left shift immediate `temp0` by 4 bits and store in `temp1`
+    __ subf(s1, s1, temp0);          // Subtract `temp0` from `temp1` and store in `temp1`
+    __ add(s1, temp1, s1);           // Add `s1` with `temp1` and store in `temp1`
+
+    __ sub(temp0, s1, base);         // Subtract base from s1 and store in temp0
+    __ cmpwi(CCR0, temp0, 0);         // Compare temp0 with 0, set carry flag on greater than
+    __ mtctr(temp0);                 // Move temp0 to Count Register (CTR)
+    __ blt(CCR0, L_remainder_done);        // Branch if less than (carry flag is set, remainder in temp0)
+    __ mr(s1, temp0);                // Otherwise, remainder is 0, so move temp0 (which is    0) to s1
+
+    // s2 = s2 % BASE
+    __ srwi(temp0, s2, 16);         // Right shift immediate `s1` by 16 bits and store in `temp0`
+    __ slwi(temp1, temp0, 4);       // Left shift immediate `temp0` by 4 bits and store in `temp1`
+    __ subf(temp1, temp1, temp0);   // Subtract `temp0` from `temp1` and store in `temp1`
+    __ add(temp1, s2, temp1);       // Add `s1` with `temp1` and store in `temp1`
+
+    __ srwi(temp0, temp1, 16);       // Right shift immediate `s1` by 16 bits and store in `temp0`
+    __ slwi(s2, temp0, 4);           // Left shift immediate `temp0` by 4 bits and store in `temp1`
+    __ subf(s2, s1, temp0);          // Subtract `temp0` from `temp1` and store in `temp1`
+    __ add(s2, temp1, s2);           // Add `s1` with `temp1` and store in `temp1`
+
+    __ sub(temp0, s2, base);        // Subtract base from s1 and store in temp0
+    __ cmpwi(CCR0, temp0, 0);        // Compare temp0 with 0, set carry flag on greater than
+    __ mtctr(temp0);                // Move temp0 to Count Register (CTR)
+    __ blt(CCR0, L_remainder_done);       // Branch if less than (carry flag is set, remainder in temp0)
+    __ mr(s2, temp0);               // Otherwise, remainder is 0, so move temp0 (which is    0) to s1
+
+
+    // Subtract nmax from len and set flags
+    __ subf(len, nmax, len);
+    __ cmpeqb(CCR0, len, nmax);
+
+    // Subtract 16 from nmax and store in count
+    __ subi(count, nmax, 16);
+
+    //Branch to L_nmax_loop if len is less than nmax
+    __ blt(CCR0, L_nmax_loop);
+
+    __ bind(L_by16);
+
+    __ addo(len, len, count);
+    __ blt(CCR0, L_by1);
+
+    __ bind(L_by16_loop);
+
+    generate_updateBytesAdler32_accum(s1, s2, buff, temp0, temp1,
+                                     vbytes, vs1acc, vs2acc, vtable);
+
+    __ subi(len, len, 16);        // Subtract 16 from count
+    __ cmplwi(CCR0, len, 0);            // Compare count with 0
+    __ bge(CCR0, L_by16_loop);         // Branch to L_nmax_loop if count >= 0
+
+    __ bind(L_by1);
+    __ addic_(len, len, 15);
+    __ blt(CCR0, L_do_mod);
+
+    __ bind(L_by1_loop);
+    __ lbz(temp0, 0, buff);
+    __ addi(buff, buff, 1);
+    __ add(s1, s1, temp0);
+    __ add(s2, s2, s1);
+    __ subi(len, len, 1);
+    __ bge(CCR0, L_by1_loop);
+
+    // s1 = s1 % BASE
+    __ srwi(temp0, s1, 16);      // Right shift immediate `s1` by 16 bits and store in `temp0`
+    __ slwi(temp1, temp0, 4);    // Left shift immediate `temp0` by 4 bits and store in `temp1`
+    __ subf(temp1, temp1, temp0);    // Subtract `temp0` from `temp1` and store in `temp1`
+    __ add(temp1, s1, temp1);        // Add `s1` with `temp1` and store in `temp1`
+
+    __ srwi(temp0, temp1, 16);       // Right shift immediate `s1` by 16 bits and store in `temp0`
+    __ slwi(s1, temp0, 4);           // Left shift immediate `temp0` by 4 bits and store in `temp1`
+    __ subf(s1, s1, temp0);          // Subtract `temp0` from `temp1` and store in `temp1`
+    __ add(s1, temp1, s1);           // Add `s1` with `temp1` and store in `temp1`
+
+    __ sub(temp0, s1, base);         // Subtract base from s1 and store in temp0
+    __ cmpwi(CCR0, temp0, 0);         // Compare temp0 with 0, set carry flag on greater than
+    __ mtctr(temp0);                 // Move temp0 to Count Register (CTR)
+    __ blt(CCR0, L_remainder_done);        // Branch if less than (carry flag is set, remainder in temp0)
+    __ mr(s1, temp0);                // Otherwise, remainder is 0, so move temp0 (which is    0) to s1
+
+    // s2 = s2 % BASE
+    __ srwi(temp0, s2, 16);         // Right shift immediate `s1` by 16 bits and store in `temp0`
+    __ slwi(temp1, temp0, 4);       // Left shift immediate `temp0` by 4 bits and store in `temp1`
+    __ subf(temp1, temp1, temp0);   // Subtract `temp0` from `temp1` and store in `temp1`
+    __ add(temp1, s2, temp1);       // Add `s1` with `temp1` and store in `temp1`
+
+    __ srwi(temp0, temp1, 16);       // Right shift immediate `s1` by 16 bits and store in `temp0`
+    __ slwi(s2, temp0, 4);           // Left shift immediate `temp0` by 4 bits and store in `temp1`
+    __ subf(s2, s1, temp0);          // Subtract `temp0` from `temp1` and store in `temp1`
+    __ add(s2, temp1, s2);           // Add `s1` with `temp1` and store in `temp1`
+
+    __ sub(temp0, s2, base);        // Subtract base from s1 and store in temp0
+    __ cmpwi(CCR0, temp0, 0);        // Compare temp0 with 0, set carry flag on greater than
+    __ mtctr(temp0);                // Move temp0 to Count Register (CTR)
+    __ blt(CCR0, L_remainder_done);       // Branch if less than (carry flag is set, remainder in temp0)
+    __ mr(s2, temp0);               // Otherwise, remainder is 0, so move temp0 (which is    0) to s1
+
+    __ bind(L_combine);
+    //s1 = 0x00001234 (lower 16 bits)
+    // s2 = 0x00005678 (upper bits)
+    // s2 << 16 => 0x56780000
+    // s1 | (s2 << 16) => 0x56781234
+    __ rldimi(s1, s2, 16, 0);
+
+    __ blr();
+    return start;
+    }
+    void generate_updateBytesAdler32_accum(Register s1, Register s2, Register buff, Register temp0, Register temp1,
+                                         VectorRegister vbytes, VectorRegister vs1acc,
+                                         VectorRegister vs2acc, VectorRegister vtable) {
+    //load data
+    __ lvebx(vbytes, buff);
+    __ add(buff, buff, 16);
+
+    // s2 = s2 + s1 * 16
+    __ mulli(s1, s1, 16);
+    __ add(s2, s2, s1);
+
+
+    //vs1acc = b1 + b2 + b3 + ... + b16
+    __ vadduhm(vs1acc, vs1acc, vbytes);
+    //vs2acc = { (b1 * 16), (b2 * 15), (b3 * 14), ....., (b16 * 1) }
+    __ vmuluwm(vs2acc, vtable, vbytes); //doubt
+
+    // s1 = s1 + vs1acc
+    __ stvx(vs1acc, temp0);
+    __ add(s1, s1, temp0);
+
+    // s2 = s2 + vs2acc
+    __ stvx(vs2acc, temp1);
+    __ add(s2, s2, temp1);
+    }
+  
   //
   // Base64 decodeBlock intrinsic
   address generate_base64_decodeBlock() {
@@ -4910,6 +5160,11 @@ address generate_lookup_secondary_supers_table_stub(u1 super_klass_index) {
       StubRoutines::_base64_encodeBlock = generate_base64_encodeBlock();
     }
 #endif
+
+    if (UseAdler32Intrinsics) {
+      StubRoutines::_updateBytesAdler32 = generate_updateBytesAdler32();
+    }
+
 #endif // COMPILER2_OR_JVMCI
   }
 

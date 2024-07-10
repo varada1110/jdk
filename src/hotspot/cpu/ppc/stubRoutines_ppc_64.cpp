@@ -62,6 +62,11 @@ static julong numberOfLeadingZeros(julong p) {
   return 64;
 }
 
+// Accumulation coefficients for adler32 upper 16 bits
+jubyte StubRoutines::ppc::_adler_table[] = {
+    16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1
+};
+
 static julong compute_inverse_poly(julong long_poly) {
   // 2^64 / p
   julong mod = 0, div = 0;
