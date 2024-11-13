@@ -322,7 +322,7 @@ void Method::mask_for(const methodHandle& this_mh, int bci, InterpreterOopMap* m
 }
 
 int Method::bci_from(address bcp) const {
-  if (is_native() && bcp == 0) {
+  if (is_native() && bcp == nullptr) {
     return 0;
   }
   // Do not have a ResourceMark here because AsyncGetCallTrace stack walking code
@@ -345,7 +345,7 @@ int Method::validate_bci(int bci) const {
 int Method::validate_bci_from_bcp(address bcp) const {
   // keep bci as -1 if not a valid bci
   int bci = -1;
-  if (bcp == 0 || bcp == code_base()) {
+  if (bcp == nullptr || bcp == code_base()) {
     // code_size() may return 0 and we allow 0 here
     // the method may be native
     bci = 0;
@@ -846,10 +846,6 @@ bool Method::is_constant_getter() const {
           Bytecodes::is_return(java_code_at(last_index)));
 }
 
-bool Method::is_initializer() const {
-  return is_object_initializer() || is_static_initializer();
-}
-
 bool Method::has_valid_initializer_flags() const {
   return (is_static() ||
           method_holder()->major_version() < 51);
@@ -869,6 +865,11 @@ bool Method::is_object_initializer() const {
 
 bool Method::needs_clinit_barrier() const {
   return is_static() && !method_holder()->is_initialized();
+}
+
+bool Method::is_object_wait0() const {
+  return klass_name() == vmSymbols::java_lang_Object()
+         && name() == vmSymbols::wait_name();
 }
 
 objArrayHandle Method::resolved_checked_exceptions_impl(Method* method, TRAPS) {
@@ -1733,7 +1734,7 @@ void Method::sort_methods(Array<Method*>* methods, bool set_idnums, method_compa
     }
     {
       NoSafepointVerifier nsv;
-      QuickSort::sort(methods->data(), length, func, /*idempotent=*/false);
+      QuickSort::sort(methods->data(), length, func);
     }
     // Reset method ordering
     if (set_idnums) {
