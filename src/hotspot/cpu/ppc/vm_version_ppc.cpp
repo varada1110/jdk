@@ -253,7 +253,7 @@ void VM_Version::initialize() {
   }
 
   // TODO: Provide implementation.
-  if (UseAdler32Intrinsics) {
+  if (FLAG_IS_DEFAULT(UseAdler32Intrinsics)) {
     FLAG_SET_DEFAULT(UseAdler32Intrinsics, true);
   }
 
