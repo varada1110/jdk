@@ -3549,12 +3549,13 @@ class StubGenerator: public StubCodeGenerator {
   long fubar = 0; 
   // Adler32 Intrinsic
   address generate_updateBytesAdler32() {
+    //__ stop("die");	  
     __ align(CodeEntryAlignment);
     StubCodeMark mark(this, "StubRoutines", "updateBytesAdler32");
     address start = __ pc();
 
     Label L_simple_by1_loop, L_nmax, L_nmax_loop, L_by16, L_by16_loop,
-                  L_by1_loop, L_do_mod, L_combine, L_by1, L_remainder_done;
+                  L_by1_loop, L_combine, L_by1, L_remainder_done;
 
     Register adler  = R3;
     Register s1     = R3;
@@ -3567,25 +3568,24 @@ class StubGenerator: public StubCodeGenerator {
     Register temp0 = R10;
     Register temp1 = R14;
     Register temp3 = R16;
+    Register temp4 = R17;
+    Register temp5 = R18;
     Register tmp = R15;
     VectorRegister vbytes = VR0;
     VectorRegister vs1acc = VR1;
     VectorRegister vs2acc = VR2;
-    VectorRegister vtable = VR3;
+    VectorRegister vtable = VR20;
 
 
     uint64_t BASE = 0xfff1;
     uint64_t NMAX = 0x15B0;
 
-    __ stop("die");
-
-    __ li(base, BASE);
-    __ li(nmax, NMAX);
-
+    __ load_const(base, BASE);
+    __ load_const(nmax, NMAX);
     // Load the address of _adler_table
     __ load_const_optimized(temp0, (address) StubRoutines::ppc::_adler_table, tmp, false);
     // Load data from temp0 to vector register vtable
-    __ lvx(vtable, 0, temp0);
+    __ lvx(vtable, temp0);
 
     // s1 initialised to lower 16 bits of adler
     // s2 initialised to upper 16 bits of adler
@@ -3601,10 +3601,10 @@ class StubGenerator: public StubCodeGenerator {
     //loop body
     __ bind(L_simple_by1_loop); //beginning of the loop
     __ lbz(temp0, 0, buff); //  Load a byte from memory to temp0 by adding 1 to the register value
-    __ addi(buff, buff, 1);
+    __ addic_(buff, buff, 1);
     __ add(s1, s1, temp0);  // s1 <- s1 + temp0
     __ add(s2, s2, s1); // s2 <- s1 + s2
-    __ sub(len, len, 1);  // len <- len - 1
+    __ subi(len, len, 1);  // len <- len - 1
     __ cmpwi(CCR0, len, 0);   // Compare len with 0, set carry flag on greater than
     __ blt(CCR0, L_simple_by1_loop); //  Branch if less than (carry flag is set)
     // s1 % BASE
@@ -3627,11 +3627,10 @@ class StubGenerator: public StubCodeGenerator {
     __ li(s2, 0); //temp0);           //Otherwise, remainder is 0, so move temp0 (which is 0) to s1
     __ b(L_combine);
     __ bind(L_nmax);
-
     // Subtract nmax from len and set flags
     __ subfc(len, len, nmax);
     // Subtract 16 from nmax and store in count
-    __ sub(count, nmax, 16);
+    __ subi(count, nmax, 16);
     // Branch to L_by16 if len is less than nmax
     __ blt(CCR0, L_by16);
 
@@ -3639,8 +3638,8 @@ class StubGenerator: public StubCodeGenerator {
     generate_updateBytesAdler32_accum(s1, s2, buff, temp0, temp1,
                                      vbytes, vs1acc, vs2acc, vtable);
 
-    __ sub(count, count, 16);        // Subtract 16 from count
-    __ cmpw(CCR0, count, 0);                // Compare count with 0
+    __ subi(count, count, 16);        // Subtract 16 from count
+    __ cmpwi(CCR0, count, 0);                // Compare count with 0
     
     __ bge(CCR0, L_nmax_loop);             // Branch to L_nmax_loop if count >= 0
 
@@ -3657,7 +3656,7 @@ class StubGenerator: public StubCodeGenerator {
     __ add(s1, temp1, s1);           // Add `s1` with `temp1` and store in `temp1`
 
     __ sub(temp0, s1, base);         // Subtract base from s1 and store in temp0
-    __ cmpw(CCR0, temp0, 0);         // Compare temp0 with 0, set carry flag on greater than
+    __ cmpwi(CCR0, temp0, 0);         // Compare temp0 with 0, set carry flag on greater than
     __ mtctr(temp0);                 // Move temp0 to Count Register (CTR)
     __ blt(CCR0, L_remainder_done);        // Branch if less than (carry flag is set, remainder in temp0)
     __ li(s1, 0);                // Otherwise, remainder is 0, so move temp0 (which is    0) to s1
@@ -3673,7 +3672,7 @@ class StubGenerator: public StubCodeGenerator {
     __ add(s2, temp1, s2);           // Add `s1` with `temp1` and store in `temp1`
 
     __ sub(temp0, s2, base);        // Subtract base from s1 and store in temp0
-    __ cmpw(CCR0, temp0, 0);        // Compare temp0 with 0, set carry flag on greater than
+    __ cmpwi(CCR0, temp0, 0);        // Compare temp0 with 0, set carry flag on greater than
     __ mtctr(temp0);                // Move temp0 to Count Register (CTR)
     __ blt(CCR0, L_remainder_done);       // Branch if less than (carry flag is set, remainder in temp0)
     __ li(s2, 0);               // Otherwise, remainder is 0, so move temp0 (which is    0) to s1
@@ -3684,87 +3683,78 @@ class StubGenerator: public StubCodeGenerator {
     __ cmplw(CCR1, len, 0);
     __ mtctr(len);
     // Subtract 16 from nmax and store in count
-    __ stop("die");   
     __ subi(count, nmax, 16);
     //Branch to L_nmax_loop if len is less than nmax
     __ blt(CCR1, L_nmax_loop);
     __ bind(L_by16);
-    
+   
     __ add(len, len, count);
     __ cmpw(CCR1, len, count);
     __ blt(CCR2, L_by1);
     __ bind(L_by16_loop);
-    __ stop("die");
     generate_updateBytesAdler32_accum(s1, s2, buff, temp0, temp1,
                                      vbytes, vs1acc, vs2acc, vtable);
-    __ stop("die");
-    __ sub(len, len, 16);        // Subtract 16 from count
+    __ subi(len, len, 16);        // Subtract 16 from count
     __ cmplw(CCR2, len, 0);            // Compare count with 0
     __ bge(CCR2, L_by16_loop);         // Branch to L_nmax_loop if count >= 0
 
-    __ stop("die");
     __ bind(L_by1);
-    __ addi(len, len, 15);
+    __ li(temp4, 15);
+    __ add(len, len, temp4);
     __ cmplw(CCR2, len, 15);
     
-    __ blt(CCR2, L_do_mod);
+    __ blt(CCR2, L_by1);
     __ bind(L_by1_loop);
-    __ stop("die");
     //__ load_const_optimized(R17, (uintptr_t)&fubar);
     //__ ld(0, 0, R17);
    // __ addi(0, 0, 1);
    // __ std(0, 0, R17);
    
-   __ ld(temp0, 0, buff); 
-   __ stop("die"); 
-
+    __ ld(temp0, 0, buff); 
+    
     __ addi(buff, buff, 1);
     __ add(s1, s1, temp0);
     __ add(s2, s2, s1);
     __ subi(len, len, 1);
+    __ cmpwi(CCR0, len, 0);
     __ bge(CCR0, L_by1_loop);
-    __ stop("die");
     // s1 = s1 % BASE
     __ srwi(temp0, s1, 16);      // Right shift immediate `s1` by 16 bits and store in `temp0`
     __ slwi(temp1, temp0, 4);    // Left shift immediate `temp0` by 4 bits and store in `temp1`
     __ subf(temp1, temp1, temp0);    // Subtract `temp0` from `temp1` and store in `temp1`
     __ add(temp1, s1, temp1);        // Add `s1` with `temp1` and store in `temp1`
-
+    
     __ srwi(temp0, temp1, 16);       // Right shift immediate `s1` by 16 bits and store in `temp0`
     __ slwi(s1, temp0, 4);           // Left shift immediate `temp0` by 4 bits and store in `temp1`
     __ subf(s1, s1, temp0);          // Subtract `temp0` from `temp1` and store in `temp1`
-    __ add(s1, temp1, s1);           // Add `s1` with `temp1` and store in `temp1`
-
+    __ add(s1, s1, temp1);           // Add `s1` with `temp1` and store in `temp1`
     __ sub(temp0, s1, base);         // Subtract base from s1 and store in temp0
     __ cmpwi(CCR0, temp0, 0);         // Compare temp0 with 0, set carry flag on greater than
     __ mtctr(temp0);                 // Move temp0 to Count Register (CTR)
     __ blt(CCR0, L_remainder_done);        // Branch if less than (carry flag is set, remainder in temp0)
     __ mr(s1, temp0);                // Otherwise, remainder is 0, so move temp0 (which is    0) to s1
-
+    __ bind(L_remainder_done);
     // s2 = s2 % BASE
     __ srwi(temp0, s2, 16);         // Right shift immediate `s1` by 16 bits and store in `temp0`
     __ slwi(temp1, temp0, 4);       // Left shift immediate `temp0` by 4 bits and store in `temp1`
     __ subf(temp1, temp1, temp0);   // Subtract `temp0` from `temp1` and store in `temp1`
-    __ add(temp1, s2, temp1);       // Add `s1` with `temp1` and store in `temp1`
+    __ add(temp1, temp1, s2);       // Add `s1` with `temp1` and store in `temp1`
 
     __ srwi(temp0, temp1, 16);       // Right shift immediate `s1` by 16 bits and store in `temp0`
     __ slwi(s2, temp0, 4);           // Left shift immediate `temp0` by 4 bits and store in `temp1`
     __ subf(s2, s1, temp0);          // Subtract `temp0` from `temp1` and store in `temp1`
-    __ add(s2, temp1, s2);           // Add `s1` with `temp1` and store in `temp1`
-
+    __ add(s2, s2, temp1);           // Add `s1` with `temp1` and store in `temp1`
     __ sub(temp0, s2, base);        // Subtract base from s1 and store in temp0
     __ cmpwi(CCR0, temp0, 0);        // Compare temp0 with 0, set carry flag on greater than
     __ mtctr(temp0);                // Move temp0 to Count Register (CTR)
     __ blt(CCR0, L_remainder_done);       // Branch if less than (carry flag is set, remainder in temp0)
     __ mr(s2, temp0);               // Otherwise, remainder is 0, so move temp0 (which is    0) to s1
-
     __ bind(L_combine);
     //s1 = 0x00001234 (lower 16 bits)
     // s2 = 0x00005678 (upper bits)
     // s2 << 16 => 0x56780000
     // s1 | (s2 << 16) => 0x56781234
     __ rldimi(s1, s2, 16, 0);
-
     __ blr();
     return start;
     }
@@ -3773,8 +3763,7 @@ class StubGenerator: public StubCodeGenerator {
                                          VectorRegister vs2acc, VectorRegister vtable) {
     //load data
     __ lvebx(vbytes, buff);
-    __ add(buff, buff, 16);
-
+    __ addi(buff, buff, 17);
     // s2 = s2 + s1 * 16
     __ mulli(s1, s1, 16);
     __ add(s2, s2, s1);
@@ -3784,11 +3773,11 @@ class StubGenerator: public StubCodeGenerator {
     //vs2acc = { (b1 * 16), (b2 * 15), (b3 * 14), ....., (b16 * 1) }
     __ vmuluwm(vs2acc, vtable, vbytes); //doubt
     // s1 = s1 + vs1acc
-    __ lvsl(vs1acc, 0, temp0);
+    __ lvsl(vs1acc, temp0);
     __ add(s1, s1, temp0);
 
     // s2 = s2 + vs2acc
-    __ lvsl(vs2acc, 0, temp1);
+    __ lvsl(vs2acc, temp1);
     __ add(s2, s2, temp1);
     }
   
@@ -5012,11 +5001,12 @@ address generate_lookup_secondary_supers_table_stub(u1 super_klass_index) {
       StubRoutines::_base64_decodeBlock = generate_base64_decodeBlock();
       StubRoutines::_base64_encodeBlock = generate_base64_encodeBlock();
     }
-#endif
-
     if (UseAdler32Intrinsics) {
       StubRoutines::_updateBytesAdler32 = generate_updateBytesAdler32();
-    }
+    }    
+#endif
+
+
 
 #endif // COMPILER2_OR_JVMCI
   }
