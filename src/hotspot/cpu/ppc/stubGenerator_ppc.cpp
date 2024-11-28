@@ -3549,11 +3549,10 @@ class StubGenerator: public StubCodeGenerator {
   long fubar = 0; 
   // Adler32 Intrinsic
   address generate_updateBytesAdler32() {
-    //__ stop("die");	  
     __ align(CodeEntryAlignment);
     StubCodeMark mark(this, "StubRoutines", "updateBytesAdler32");
+    __ stop("stop");
     address start = __ pc();
-
     Label L_simple_by1_loop, L_nmax, L_nmax_loop, L_by16, L_by16_loop,
                   L_by1_loop, L_combine, L_by1, L_remainder_done;
 
@@ -3577,12 +3576,13 @@ class StubGenerator: public StubCodeGenerator {
     VectorRegister vtable = VR20;
 
 
-    uint64_t BASE = 0xfff1;
-    uint64_t NMAX = 0x15B0;
+    const uint64_t BASE = 0xfff1;
+    const uint64_t NMAX = 0x15B0;
 
     __ load_const(base, BASE);
     __ load_const(nmax, NMAX);
     // Load the address of _adler_table
+    
     __ load_const_optimized(temp0, (address) StubRoutines::ppc::_adler_table, tmp, false);
     // Load data from temp0 to vector register vtable
     __ lvx(vtable, temp0);
@@ -3749,12 +3749,13 @@ class StubGenerator: public StubCodeGenerator {
     __ mtctr(temp0);                // Move temp0 to Count Register (CTR)
     __ blt(CCR0, L_remainder_done);       // Branch if less than (carry flag is set, remainder in temp0)
     __ mr(s2, temp0);               // Otherwise, remainder is 0, so move temp0 (which is    0) to s1
-    __ bind(L_combine);
+    //__ bind(L_combine);
     //s1 = 0x00001234 (lower 16 bits)
     // s2 = 0x00005678 (upper bits)
     // s2 << 16 => 0x56780000
     // s1 | (s2 << 16) => 0x56781234
     __ rldimi(s1, s2, 16, 0);
+    __ bind(L_combine);
     __ blr();
     return start;
     }
@@ -3763,7 +3764,7 @@ class StubGenerator: public StubCodeGenerator {
                                          VectorRegister vs2acc, VectorRegister vtable) {
     //load data
     __ lvebx(vbytes, buff);
-    __ addi(buff, buff, 17);
+    __ addi(buff, buff, 16);
     // s2 = s2 + s1 * 16
     __ mulli(s1, s1, 16);
     __ add(s2, s2, s1);
