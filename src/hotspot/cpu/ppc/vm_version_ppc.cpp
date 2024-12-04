@@ -273,13 +273,10 @@ void VM_Version::initialize() {
       FLAG_SET_DEFAULT(UseCRC32CIntrinsics, true);
     }
   }
-
-  // TODO: Provide implementation.
-  if (UseAdler32Intrinsics) {
-    warning("Adler32Intrinsics not available on this CPU.");
-    FLAG_SET_DEFAULT(UseAdler32Intrinsics, false);
+  
+  if (FLAG_IS_DEFAULT(UseAdler32Intrinsics)) {
+	FLAG_SET_DEFAULT(UseAdler32Intrinsics, true);
   }
-
   // The AES intrinsic stubs require AES instruction support.
   if (has_vcipher()) {
     if (FLAG_IS_DEFAULT(UseAES)) {

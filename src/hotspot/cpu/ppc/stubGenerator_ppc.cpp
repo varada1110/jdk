@@ -4000,6 +4000,244 @@ class StubGenerator: public StubCodeGenerator {
     return start;
   }
 
+  void adler32_process_bytes(
+    Register buff, Register s1, Register s2, 
+    VectorRegister vtable, VectorRegister vzero, 
+    VectorRegister vbytes, VectorRegister vs1acc, VectorRegister vs2acc, 
+    Register temp0, Register temp1, Register temp3,
+    VectorRegister vtemp1, VectorRegister vtemp2, int step, int lmul) {
+  
+  // Ensure step aligns with MaxVectorSize
+    //assert((step == 64 && MaxVectorSize >= 64) ||
+      //     (step == 32 && MaxVectorSize >= 32) ||
+        //   (step == 16 && MaxVectorSize >= 16),
+          // "Step size must align with MaxVectorSize");
+
+    // 1. Load `step` bytes into a vector register
+    __ li(temp3, step);
+    __ vxor(vzero, vzero, vzero);  // Clear vector register `vzero` (set to all 0s)
+    __ lvx(vbytes, 0, buff);       // Load step bytes into `vbytes` (aligned)
+
+    __ addi(buff, buff, step);     // Increment buffer pointer for next chunk
+
+    // 2. Reduction sum for s1_new
+    __ vaddubm(vs1acc, vbytes, vzero);  // Add byte elements to accumulate in `vs1acc`
+    __ vsum4ubs(vs1acc, vs1acc, vzero); // Perform horizontal sum of bytes in `vs1acc`
+
+    // 3. Multiply bytes by weight vector (`vtable`) for s2_new calculation
+    __ vmuloub(vs2acc, vbytes, vtable); // Multiply unsigned bytes with weights in `vtable`
+
+    // 4. Scalar addition for `s2` (s2 = s2 + s1 * step)
+    __ rlwinm(temp1, s1, exact_log2(step), 0, 31); // temp1 = s1 << log2(step)
+    __ add(s2, s2, temp1);                         // s2 += temp1
+
+    // 5. Handle summation for s2_new based on MaxVectorSize
+    if (MaxVectorSize > 16) {
+       // Sum up all elements of vs2acc
+       __ vsum4ubs(vtemp1, vs2acc, vzero);  // Perform horizontal sum for vs2acc into vtemp1
+    } else {
+       // For smaller vector sizes, handle narrower reductions
+      __ vmuloub(vtemp2, vs2acc, vtable); // Extend and handle partial sums
+      __ vsum4ubs(vtemp1, vtemp2, vzero); // Horizontal sum for all partial results
+    }
+
+    // 6. Extract results for s1_new and s2_new
+    __ mfvrd(temp0, vs1acc);    // Extract scalar from vs1acc
+    __ add(s1, s1, temp0);        // Update s1
+
+    __ mfvrd(temp1, vtemp1);    // Extract scalar from vtemp1
+    __ add(s2, s2, temp1);        // Update s2
+  }
+
+ 
+  // Adler32 Intrinsic
+  address generate_updateBytesAdler32() {
+    //__ stop("die");	  
+    __ align(CodeEntryAlignment);
+    StubCodeMark mark(this, "StubRoutines", "updateBytesAdler32");
+    address start = __ pc();
+
+    __ stop("stop");
+    Label L_nmax, L_nmax_loop, L_nmax_loop_entry, L_by16, L_by16_loop,
+      L_by16_loop_unroll, L_by1_loop, L_do_mod, L_combine, L_by1;
+
+
+    Register adler  = R3;
+    Register s1     = R3;
+    Register s2     = R6;
+    Register buff   = R4;
+    Register len    = R5;
+    Register nmax  = R7;
+    Register base  = R8;
+    Register count = R9;
+    Register temp0 = R10;
+    Register temp1 = R14;
+    Register temp3 = R15;
+    Register tmp1 = R17;
+    Register tmp2 = R18;
+    Register tmp = R15;
+
+    VectorRegister vzero = VR30;
+    VectorRegister vbytes = VR3;
+    VectorRegister vs1acc = VR7;
+    VectorRegister vs2acc = VR11;
+    VectorRegister vtable_64 = VR19;
+    VectorRegister vtable_32 = VR21;
+    VectorRegister vtable_16 = VR24;
+    VectorRegister vtemp1 = VR28;
+    VectorRegister vtemp2 = VR29;
+    VectorRegister vtemp3 = VR30;
+
+
+
+    uint64_t BASE = 0xfff1;
+    uint64_t NMAX = 0x15B0;
+
+    // Loops steps
+    int step_64 = 64;
+    int step_32 = 32;
+    int step_16 = 16;
+    int step_1  = 1;
+    
+    int m4 = 0b010;
+    int m2 = 0b001;
+    int m1 = 0b000;
+
+
+
+
+
+    __ li(temp1, 64);
+    __ mtvrd(vtemp3, temp1);
+    __ vsubuhm(vtable_64, vtemp3, vtemp1);
+
+    __ li(temp1, 32);
+    __ mtvrd(vtemp3, temp1);
+    __ vsubuhm(vtable_32, vtemp3, vtemp1);
+
+    __ li(temp1, 16);
+    __ mtvrd(vtemp3, temp1);
+    __ vsubuhm(vtable_16, vtemp3, vtemp1);
+
+    __ li(tmp, 0);
+    __ mtvrd(vzero, tmp);
+
+    __ load_const(base, BASE);
+    __ load_const(nmax, NMAX);
+
+    __ rlwinm(s2, adler, 16, 0, 15);
+    __ andi(s1, adler, 0xFFFF);
+
+    __ li(temp0, step_16);
+    __ cmpw(CCR0, len, temp0);
+    __ bge(CCR0, L_nmax);
+
+    __ cmpwi(CCR0, len, 0);
+    __ bge(CCR0, L_combine);
+
+    __ subi(len, len, step_1);
+    __ b(L_by1_loop);
+
+    __ bind(L_nmax);
+    __ sub(len, len, nmax);
+    __ subi(count, nmax, 16);
+    __ cmpwi(CCR0, len, 0);
+    __ blt(CCR0, L_by16);
+
+    __ bind(L_nmax_loop_entry);
+    __ subi(count, count, 32);
+
+    __ stop("die");
+    adler32_process_bytes(buff, s1, s2, vtable_64, vzero,
+      vbytes, vs1acc, vs2acc, temp0, temp1, temp3,
+      vtemp1, vtemp2, step_64, m4);
+    __ subi(count, count, step_64);
+    __ cmpwi(CCR0, count, 0);
+    __ blt(CCR0, L_nmax_loop);
+
+    adler32_process_bytes(buff, s1, s2, vtable_32, vzero,
+      vbytes, vs1acc, vs2acc, temp0, temp1, temp3,
+      vtemp1, vtemp2, step_32, m2);
+    adler32_process_bytes(buff, s1, s2, vtable_16, vzero,
+      vbytes, vs1acc, vs2acc, temp0, temp1, temp3,
+      vtemp1, vtemp2, step_16, m1);    
+
+    __ divd(s1, s1, base);
+    __ mulld(tmp1, s1, base);
+    __ sub(s1, tmp1, s1);
+    
+    __ divd(s2, s2, base);
+    __ mulld(tmp2, s2, base);
+    __ sub(s2, tmp2, s2);
+
+    __ sub(len, len, nmax);
+    __ subi(count, nmax, 16);
+    __ cmpwi(CCR0, len, 0);
+    __ bge(CCR0, L_nmax_loop_entry);
+
+    __ bind(L_by16);
+    __ add(len, len, count);
+    __ cmpwi(CCR0, len, 0);
+    __ blt(CCR0, L_by1);
+
+    __ li(temp3, step_64);
+    __ cmpw(CCR0, len, temp3);
+    __ blt(CCR0, L_by16_loop);
+
+
+    __ bind(L_by16_loop_unroll);
+    adler32_process_bytes(buff, s1, s2, vtable_64, vzero,
+      vbytes, vs1acc, vs2acc, temp0, temp1, temp3,
+      vtemp1, vtemp2, step_64, m4);
+    __ subi(len, len, step_64);
+    __ cmpw(CCR0, len, temp3);
+    __ bge(CCR0, L_by16_loop_unroll);
+
+    __ bind(L_by16_loop);
+    adler32_process_bytes(buff, s1, s2, vtable_16, vzero,
+      vbytes, vs1acc, vs2acc, temp0, temp1, temp3,
+      vtemp1, vtemp2, step_16, m1);
+
+    __ subi(len, len, step_16);
+    __ cmpwi(CCR0, len, 0);
+    __ bge(CCR0, L_by16_loop);
+
+    __ bind(L_by1);
+    __ addi(len, len, 15);
+    __ cmpwi(CCR0, len, 0);
+    __ blt(CCR0, L_do_mod);
+
+    __ bind(L_by1_loop);
+    __ lbz(temp0, 0, buff);
+    __ addi(buff, buff, step_1);
+    __ add(s1, temp0, s1);
+    __ add(s2, s2, s1);
+    __ subi(len, len, step_1);
+    __ cmpwi(CCR0, len, 0);
+    __ bge(CCR0, L_by1_loop);
+
+    __ bind(L_do_mod);
+
+    __ divd(s1, s1, base);
+    __ mulld(tmp1, s1, base);
+    __ sub(s1, tmp1, s1);
+
+    __ divd(s2, s2, base);
+    __ mulld(tmp2, s2, base);
+    __ sub(s2, tmp2, s2);
+
+    __ bind(L_combine);
+    __ slwi(s2, s2, 16);
+    __ orr(s1, s1, s2);
+
+    __ blr();
+    __ stop("die");
+    return start;
+  }
+
+
+
+
 #undef UC
 #undef LC
 #undef DIG
