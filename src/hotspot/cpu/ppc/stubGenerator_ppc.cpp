@@ -3551,7 +3551,6 @@ class StubGenerator: public StubCodeGenerator {
   address generate_updateBytesAdler32() {
     __ align(CodeEntryAlignment);
     StubCodeMark mark(this, "StubRoutines", "updateBytesAdler32");
-    __ stop("stop");
     address start = __ pc();
     Label L_simple_by1_loop, L_nmax, L_nmax_loop, L_by16, L_by16_loop,
                   L_by1_loop, L_combine, L_by1, L_remainder_done;
@@ -3609,23 +3608,21 @@ class StubGenerator: public StubCodeGenerator {
     __ blt(CCR0, L_simple_by1_loop); //  Branch if less than (carry flag is set)
     // s1 % BASE
 
-    __ sub(temp0, s1, base); // Subtract base from s1 and store in temp0
-    __ cmpwi(CCR0, temp0, 0); // Compare temp0 with 0, set carry flag on greater than
-    __ mtctr(temp0);  // Move temp0 to Count Register (CTR)
-    __ blt(CCR0, L_remainder_done);  // Branch if less than (carry flag is set, remainder in temp0)
-    __ mr(s1, temp0); // Otherwise, remainder is 0, so move temp0 (which is    0) to s1
+    __ divd(s1, s1, base);
+    __ mulld(temp0, s1, base);
+    __ sub(s1, temp0, s1);
+
     // S2 % BASE
 
-    __ srawi(temp0, s2, 16);          // Right shift immediate `s1` by 16 bits and store in `temp0`
-    __ slw(temp1, temp0, 4);         // Left shift immediate `temp0` by 4 bits and store in `temp1`
-    __ sub(temp1, temp1, temp0);    // Subtract `temp0` from `temp1` and store in `temp1`
-    __ add(s2, s2, temp1);           // Add `s1` with `temp1` and store in `temp1`
-    __ sub(temp0, s2, base);    //Subtract base from s1 and store in temp0
-    __ cmplwi(CCR0, temp0, 0);    //Compare temp0 with 0, set carry flag on greater than
-    __ mtctr(temp0);            //Move temp0 to Count Register (CTR)
-    __ blt(CCR0, L_remainder_done);   // Branch if less than (carry flag is set, remainder in temp0)
-    __ li(s2, 0); //temp0);           //Otherwise, remainder is 0, so move temp0 (which is 0) to s1
+    __ srawi(temp0, s2, 16);
+    __ slw(temp1, temp0, 4);
+    __ sub(temp1, temp1, temp0);
+    __ add(s2, s2, temp1);
+    __ divd(s2, s2, base);
+    __ mulld(temp0, s2, base);
+    __ sub(s2, temp0, s2);
     __ b(L_combine);
+    
     __ bind(L_nmax);
     // Subtract nmax from len and set flags
     __ subfc(len, len, nmax);
@@ -3655,11 +3652,10 @@ class StubGenerator: public StubCodeGenerator {
     __ sub(s1, s1, temp0);          // Subtract `temp0` from `temp1` and store in `temp1`
     __ add(s1, temp1, s1);           // Add `s1` with `temp1` and store in `temp1`
 
-    __ sub(temp0, s1, base);         // Subtract base from s1 and store in temp0
-    __ cmpwi(CCR0, temp0, 0);         // Compare temp0 with 0, set carry flag on greater than
-    __ mtctr(temp0);                 // Move temp0 to Count Register (CTR)
-    __ blt(CCR0, L_remainder_done);        // Branch if less than (carry flag is set, remainder in temp0)
-    __ li(s1, 0);                // Otherwise, remainder is 0, so move temp0 (which is    0) to s1
+    __ divd(s1, s1, base);
+    __ mulld(temp0, s1, base);
+    __ sub(s1, temp0, s1);
+    
     // s2 = s2 % BASE
     __ sraw(temp0, s2, 16);         // Right shift immediate `s1` by 16 bits and store in `temp0`
     __ slw(temp1, temp0, 4);       // Left shift immediate `temp0` by 4 bits and store in `temp1`
@@ -3671,12 +3667,10 @@ class StubGenerator: public StubCodeGenerator {
     __ sub(s2, s1, temp0);          // Subtract `temp0` from `temp1` and store in `temp1`
     __ add(s2, temp1, s2);           // Add `s1` with `temp1` and store in `temp1`
 
-    __ sub(temp0, s2, base);        // Subtract base from s1 and store in temp0
-    __ cmpwi(CCR0, temp0, 0);        // Compare temp0 with 0, set carry flag on greater than
-    __ mtctr(temp0);                // Move temp0 to Count Register (CTR)
-    __ blt(CCR0, L_remainder_done);       // Branch if less than (carry flag is set, remainder in temp0)
-    __ li(s2, 0);               // Otherwise, remainder is 0, so move temp0 (which is    0) to s1
-    
+    __ divd(s2, s2, base);
+    __ mulld(temp0, s2, base);
+    __ sub(s2, temp0, s2);
+
     // Subtract nmax from len and set flags
     
     __ sub(len, len, nmax);
@@ -3728,12 +3722,10 @@ class StubGenerator: public StubCodeGenerator {
     __ slwi(s1, temp0, 4);           // Left shift immediate `temp0` by 4 bits and store in `temp1`
     __ subf(s1, s1, temp0);          // Subtract `temp0` from `temp1` and store in `temp1`
     __ add(s1, s1, temp1);           // Add `s1` with `temp1` and store in `temp1`
-    __ sub(temp0, s1, base);         // Subtract base from s1 and store in temp0
-    __ cmpwi(CCR0, temp0, 0);         // Compare temp0 with 0, set carry flag on greater than
-    __ mtctr(temp0);                 // Move temp0 to Count Register (CTR)
-    __ blt(CCR0, L_remainder_done);        // Branch if less than (carry flag is set, remainder in temp0)
-    __ mr(s1, temp0);                // Otherwise, remainder is 0, so move temp0 (which is    0) to s1
-    __ bind(L_remainder_done);
+
+    __ divd(s1, s1, base);
+    __ mulld(temp0, s1, base);
+    __ sub(s1, temp0, s1);
     // s2 = s2 % BASE
     __ srwi(temp0, s2, 16);         // Right shift immediate `s1` by 16 bits and store in `temp0`
     __ slwi(temp1, temp0, 4);       // Left shift immediate `temp0` by 4 bits and store in `temp1`
@@ -3744,18 +3736,20 @@ class StubGenerator: public StubCodeGenerator {
     __ slwi(s2, temp0, 4);           // Left shift immediate `temp0` by 4 bits and store in `temp1`
     __ subf(s2, s1, temp0);          // Subtract `temp0` from `temp1` and store in `temp1`
     __ add(s2, s2, temp1);           // Add `s1` with `temp1` and store in `temp1`
-    __ sub(temp0, s2, base);        // Subtract base from s1 and store in temp0
-    __ cmpwi(CCR0, temp0, 0);        // Compare temp0 with 0, set carry flag on greater than
-    __ mtctr(temp0);                // Move temp0 to Count Register (CTR)
-    __ blt(CCR0, L_remainder_done);       // Branch if less than (carry flag is set, remainder in temp0)
-    __ mr(s2, temp0);               // Otherwise, remainder is 0, so move temp0 (which is    0) to s1
+
+    __ divd(s2, s2, base);
+    __ mulld(temp0, s2, base);
+    __ sub(s2, temp0, s2);
+    
     //__ bind(L_combine);
     //s1 = 0x00001234 (lower 16 bits)
     // s2 = 0x00005678 (upper bits)
     // s2 << 16 => 0x56780000
     // s1 | (s2 << 16) => 0x56781234
-    __ rldimi(s1, s2, 16, 0);
     __ bind(L_combine);
+    __ slwi(s2, s2, 16);
+    __ orr(s1, s1, s2);
+
     __ blr();
     return start;
     }
