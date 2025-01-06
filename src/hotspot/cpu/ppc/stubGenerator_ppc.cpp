@@ -3598,7 +3598,8 @@ class StubGenerator: public StubCodeGenerator {
     __ li(temp0, 16); // tempo = 16
     __ cmpw(CCR0, len, temp0); // len>=temp0?i
     __ bge(CCR0, L_nmax); // bge -> greater than and equal, if true branch -L_nmax
-    __ beq(CCR0, L_combine); // if CCR1 == 0 goto L_combine
+    __ cmpwi(CCR1, len, 0);
+    __ beq(CCR1, L_combine); // if CCR1 == 0 goto L_combine
     //loop body
     __ bind(L_simple_by1_loop); //beginning of the loop
     __ lbz(temp0, 0, buff); //  Load a byte from memory to temp0 by adding 1 to the register value
@@ -3612,17 +3613,17 @@ class StubGenerator: public StubCodeGenerator {
 
     __ divd(s1, s1, base);
     __ mulld(temp0, s1, base);
-    __ sub(s1, temp0, s1);
+    __ sub(s1, s1, temp0);
 
     // S2 % BASE
 
-    __ srawi(temp0, s2, 16);
+    __ srwi(temp0, s2, 16);
     __ slw(temp1, temp0, 4);
     __ sub(temp1, temp1, temp0);
     __ add(s2, s2, temp1);
     __ divd(s2, s2, base);
     __ mulld(temp0, s2, base);
-    __ sub(s2, temp0, s2);
+    __ sub(s2, s2, temp0);
     __ b(L_combine);
     
     __ bind(L_nmax);
@@ -3644,62 +3645,62 @@ class StubGenerator: public StubCodeGenerator {
 
 
     // s1 = s1 % BASE
-    __ sraw(temp0, s1, 16);      // Right shift immediate `s1` by 16 bits and store in `temp0`
+    __ srw(temp0, s1, 16);      // Right shift immediate `s1` by 16 bits and store in `temp0`
     __ slw(temp1, temp0, 4);    // Left shift immediate `temp0` by 4 bits and store in `temp1`
     __ sub(temp1, temp1, temp0);    // Subtract `temp0` from `temp1` and store in `temp1`
     __ add(temp1, s1, temp1);        // Add `s1` with `temp1` and store in `temp1`
 
-    __ sraw(temp0, temp1, 16);       // Right shift immediate `s1` by 16 bits and store in `temp0`
+    __ srw(temp0, temp1, 16);       // Right shift immediate `s1` by 16 bits and store in `temp0`
     __ slw(s1, temp0, 4);           // Left shift immediate `temp0` by 4 bits and store in `temp1`
     __ sub(s1, s1, temp0);          // Subtract `temp0` from `temp1` and store in `temp1`
     __ add(s1, temp1, s1);           // Add `s1` with `temp1` and store in `temp1`
 
     __ divd(s1, s1, base);
     __ mulld(temp0, s1, base);
-    __ sub(s1, temp0, s1);
+    __ sub(s1, s1, temp0);
     
     // s2 = s2 % BASE
-    __ sraw(temp0, s2, 16);         // Right shift immediate `s1` by 16 bits and store in `temp0`
+    __ srw(temp0, s2, 16);         // Right shift immediate `s1` by 16 bits and store in `temp0`
     __ slw(temp1, temp0, 4);       // Left shift immediate `temp0` by 4 bits and store in `temp1`
     __ sub(temp1, temp1, temp0);   // Subtract `temp0` from `temp1` and store in `temp1`
     __ add(temp1, s2, temp1);       // Add `s1` with `temp1` and store in `temp1`
 
-    __ sraw(temp0, temp1, 16);       // Right shift immediate `s1` by 16 bits and store in `temp0`
+    __ srw(temp0, temp1, 16);       // Right shift immediate `s1` by 16 bits and store in `temp0`
     __ slw(s2, temp0, 4);           // Left shift immediate `temp0` by 4 bits and store in `temp1`
     __ sub(s2, s1, temp0);          // Subtract `temp0` from `temp1` and store in `temp1`
     __ add(s2, temp1, s2);           // Add `s1` with `temp1` and store in `temp1`
 
     __ divd(s2, s2, base);
     __ mulld(temp0, s2, base);
-    __ sub(s2, temp0, s2);
+    __ sub(s2, s2, temp0);
 
     // Subtract nmax from len and set flags
     
     __ sub(len, len, nmax);
-    __ cmplw(CCR1, len, 0);
+    __ cmplw(CCR0, len, 0);
     __ mtctr(len);
     // Subtract 16 from nmax and store in count
     __ subi(count, nmax, 16);
     //Branch to L_nmax_loop if len is less than nmax
-    __ blt(CCR1, L_nmax_loop);
+    __ blt(CCR0, L_nmax_loop);
     __ bind(L_by16);
    
     __ add(len, len, count);
-    __ cmpw(CCR1, len, count);
-    __ blt(CCR2, L_by1);
+    __ cmpw(CCR0, len, count);
+    __ blt(CCR0, L_by1);
     __ bind(L_by16_loop);
     generate_updateBytesAdler32_accum(s1, s2, buff, temp0, temp1,
                                      vbytes, vs1acc, vs2acc, vtable);
     __ subi(len, len, 16);        // Subtract 16 from count
-    __ cmplw(CCR2, len, 0);            // Compare count with 0
-    __ bge(CCR2, L_by16_loop);         // Branch to L_nmax_loop if count >= 0
+    __ cmplw(CCR0, len, 0);            // Compare count with 0
+    __ bge(CCR0, L_by16_loop);         // Branch to L_nmax_loop if count >= 0
 
     __ bind(L_by1);
     __ li(temp4, 15);
     __ add(len, len, temp4);
-    __ cmplw(CCR2, len, 15);
+    __ cmplw(CCR0, len, 15);
     
-    __ blt(CCR2, L_by1);
+    __ blt(CCR0, L_by1);
     __ bind(L_by1_loop);
     //__ load_const_optimized(R17, (uintptr_t)&fubar);
     //__ ld(0, 0, R17);
@@ -3715,33 +3716,33 @@ class StubGenerator: public StubCodeGenerator {
     __ cmpwi(CCR0, len, 0);
     __ bge(CCR0, L_by1_loop);
     // s1 = s1 % BASE
-    __ srwi(temp0, s1, 16);      // Right shift immediate `s1` by 16 bits and store in `temp0`
-    __ slwi(temp1, temp0, 4);    // Left shift immediate `temp0` by 4 bits and store in `temp1`
-    __ subf(temp1, temp1, temp0);    // Subtract `temp0` from `temp1` and store in `temp1`
+    __ srw(temp0, s1, 16);      // Right shift immediate `s1` by 16 bits and store in `temp0`
+    __ slw(temp1, temp0, 4);    // Left shift immediate `temp0` by 4 bits and store in `temp1`
+    __ sub(temp1, temp1, temp0);    // Subtract `temp0` from `temp1` and store in `temp1`
     __ add(temp1, s1, temp1);        // Add `s1` with `temp1` and store in `temp1`
     
-    __ srwi(temp0, temp1, 16);       // Right shift immediate `s1` by 16 bits and store in `temp0`
-    __ slwi(s1, temp0, 4);           // Left shift immediate `temp0` by 4 bits and store in `temp1`
-    __ subf(s1, s1, temp0);          // Subtract `temp0` from `temp1` and store in `temp1`
+    __ srw(temp0, temp1, 16);       // Right shift immediate `s1` by 16 bits and store in `temp0`
+    __ slw(s1, temp0, 4);           // Left shift immediate `temp0` by 4 bits and store in `temp1`
+    __ sub(s1, s1, temp0);          // Subtract `temp0` from `temp1` and store in `temp1`
     __ add(s1, s1, temp1);           // Add `s1` with `temp1` and store in `temp1`
 
     __ divd(s1, s1, base);
     __ mulld(temp0, s1, base);
-    __ sub(s1, temp0, s1);
+    __ sub(s1, s1, temp0);
     // s2 = s2 % BASE
-    __ srwi(temp0, s2, 16);         // Right shift immediate `s1` by 16 bits and store in `temp0`
-    __ slwi(temp1, temp0, 4);       // Left shift immediate `temp0` by 4 bits and store in `temp1`
-    __ subf(temp1, temp1, temp0);   // Subtract `temp0` from `temp1` and store in `temp1`
+    __ srw(temp0, s2, 16);         // Right shift immediate `s1` by 16 bits and store in `temp0`
+    __ slw(temp1, temp0, 4);       // Left shift immediate `temp0` by 4 bits and store in `temp1`
+    __ sub(temp1, temp1, temp0);   // Subtract `temp0` from `temp1` and store in `temp1`
     __ add(temp1, temp1, s2);       // Add `s1` with `temp1` and store in `temp1`
 
-    __ srwi(temp0, temp1, 16);       // Right shift immediate `s1` by 16 bits and store in `temp0`
-    __ slwi(s2, temp0, 4);           // Left shift immediate `temp0` by 4 bits and store in `temp1`
-    __ subf(s2, s1, temp0);          // Subtract `temp0` from `temp1` and store in `temp1`
+    __ srw(temp0, temp1, 16);       // Right shift immediate `s1` by 16 bits and store in `temp0`
+    __ slw(s2, temp0, 4);           // Left shift immediate `temp0` by 4 bits and store in `temp1`
+    __ sub(s2, s1, temp0);          // Subtract `temp0` from `temp1` and store in `temp1`
     __ add(s2, s2, temp1);           // Add `s1` with `temp1` and store in `temp1`
 
     __ divd(s2, s2, base);
     __ mulld(temp0, s2, base);
-    __ sub(s2, temp0, s2);
+    __ sub(s2, s2, temp0);
     
     //__ bind(L_combine);
     //s1 = 0x00001234 (lower 16 bits)
@@ -3749,9 +3750,8 @@ class StubGenerator: public StubCodeGenerator {
     // s2 << 16 => 0x56780000
     // s1 | (s2 << 16) => 0x56781234
     __ bind(L_combine);
-    __ slwi(s2, s2, 16);
+    __ slw(s2, s2, 16);
     __ orr(s1, s1, s2);
-    __ li(R3_RET, 0);
     __ blr();
     return start;
     }
@@ -3759,6 +3759,7 @@ class StubGenerator: public StubCodeGenerator {
                                          VectorRegister vbytes, VectorRegister vs1acc,
                                          VectorRegister vs2acc, VectorRegister vtable) {
     //load data
+    
     __ lvebx(vbytes, buff);
     __ addi(buff, buff, 16);
     // s2 = s2 + s1 * 16
