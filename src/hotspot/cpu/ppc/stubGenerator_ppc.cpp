@@ -3546,7 +3546,6 @@ class StubGenerator: public StubCodeGenerator {
 // order of the elements in a vector initialization.
 #define ARRAY_TO_LXV_ORDER(e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15) e15, e14, e13, e12, e11, e10, e9, e8, e7, e6, e5, e4, e3, e2, e1, e0
 
-  long fubar = 0; 
   // Adler32 Intrinsic
   address generate_updateBytesAdler32() {
     __ align(CodeEntryAlignment);
@@ -3574,6 +3573,9 @@ class StubGenerator: public StubCodeGenerator {
     VectorRegister vs2acc = VR2;
     VectorRegister vtable = VR20;
 
+    static jubyte   _adler_table[] = {
+    16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1
+    };
 
     const uint64_t BASE = 0xfff1;
     const uint64_t NMAX = 0x15B0;
@@ -3582,7 +3584,7 @@ class StubGenerator: public StubCodeGenerator {
     __ load_const(nmax, NMAX);
     // Load the address of _adler_table
     
-    __ load_const_optimized(temp0, (address) StubRoutines::ppc::_adler_table, tmp, false);
+    __ load_const_optimized(temp0, (address) _adler_table, tmp, false);
     // Load data from temp0 to vector register vtable
     __ lvx(vtable, temp0);
 
@@ -3749,7 +3751,7 @@ class StubGenerator: public StubCodeGenerator {
     __ bind(L_combine);
     __ slwi(s2, s2, 16);
     __ orr(s1, s1, s2);
-
+    __ li(R3_RET, 0);
     __ blr();
     return start;
     }

@@ -54,7 +54,6 @@ class ppc {
 
  private:
  public:
-  static jubyte   _adler_table[];
   static address generate_crc_constants(juint reverse_poly);
 };
 
