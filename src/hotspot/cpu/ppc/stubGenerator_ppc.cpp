@@ -3582,22 +3582,22 @@ class StubGenerator: public StubCodeGenerator {
     16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1
     }; 
 
-    __ load_const_optimized(temp0, (address)_adler_table, tmp, false);
+    __ load_const_optimized(temp0, &_adler_table, tmp, false);
     // Load data from temp0 to vector register vtable
     __ lvx(vtable, temp0);
 
     // s1 initialised to lower 16 bits of adler
     // s2 initialised to upper 16 bits of adler
 
-    __ rlwinm(s2, adler, 16, 0, 15);
+    //__ rlwinm(s2, adler, 16, 0, 15);
     //__ andi(s1, adler, 0xFFFF);
    
-    __ clrldi(s1, adler, 48);
-    //__ clrrdi(s2, adler, 47);
+    //__ clrldi(s1, adler, 48);
+   // __ clrrdi(s2, adler, 16);
    
-    //__ srdi(s2, adler, 16);
-    //__ clrldi(s2, s2, 48);
-
+    __ andi(s1, adler, 0xffff);
+    __ srdi(adler, adler, 16);
+    __ andi(s2, adler, 0xffff);
 
     // The pipelined loop needs at least 16 elements for 1 iteration
     // It does check this, but it is more effective to skip to the cleanup loop
@@ -3608,7 +3608,7 @@ class StubGenerator: public StubCodeGenerator {
     //loop body
     __ bind(L_simple_by1_loop); //beginning of the loop
     __ lbz(temp0, 1, buff); //  Load a byte from memory to temp0 by adding 1 to the register value
-    __ addi(buff, buff, 1);
+   // __ addi(buff, buff, 1);
     __ add(s1, s1, temp0);  // s1 <- s1 + temp0
     __ add(s2, s2, s1); // s2 <- s1 + s2
     __ subi(len, len, 1);  // len <- len - 1
@@ -3618,7 +3618,7 @@ class StubGenerator: public StubCodeGenerator {
 
     __ divdu(s1, s1, base);
     __ mulld(temp0, s1, base);
-    __ subf(s1, s1, temp0);
+    __ sub(s1, s1, temp0);
 
     // S2 % BASE
 
@@ -3628,7 +3628,7 @@ class StubGenerator: public StubCodeGenerator {
     __ add(s2, s2, temp1);
     __ divdu(s2, s2, base);
     __ mulld(temp0, s2, base);
-    __ subf(s2, s2, temp0);
+    __ sub(s2, s2, temp0);
     __ b(L_combine);
     
     __ bind(L_nmax);
@@ -3661,7 +3661,7 @@ class StubGenerator: public StubCodeGenerator {
 
     __ divdu(s1, s1, base);
     __ mulld(temp0, s1, base);
-    __ subf(s1, s1, temp0);
+    __ sub(s1, s1, temp0);
     
     // s2 = s2 % BASE
     __ srdi(temp0, s2, 16);         // Right shift immediate `s1` by 16 bits and store in `temp0`
@@ -3676,13 +3676,13 @@ class StubGenerator: public StubCodeGenerator {
 
     __ divdu(s2, s2, base);
     __ mulld(temp0, s2, base);
-    __ subf(s2, s2, temp0);
+    __ sub(s2, s2, temp0);
 
     // Subtract nmax from len and set flags
     
     __ sub(len, len, nmax);
     __ cmplw(CCR0, len, 0);
-    __ mtctr(len);
+    //__ mtctr(len);
     // Subtract 16 from nmax and store in count
     __ subi(count, nmax, 16);
     //Branch to L_nmax_loop if len is less than nmax
@@ -3711,7 +3711,7 @@ class StubGenerator: public StubCodeGenerator {
    // __ std(0, 0, R17);
     __ lbz(temp0, 1, buff); 
     
-    __ addi(buff, buff, 1);
+    //__ addi(buff, buff, 1);
     __ add(s1, s1, temp0);
     __ add(s2, s2, s1);
     __ subi(len, len, 1);
@@ -3731,7 +3731,7 @@ class StubGenerator: public StubCodeGenerator {
 
     __ divdu(s1, s1, base);
     __ mulld(temp0, s1, base);
-    __ subf(s1, s1, temp0);
+    __ sub(s1, s1, temp0);
     // s2 = s2 % BASE
     __ srdi(temp0, s2, 16);         // Right shift immediate `s1` by 16 bits and store in `temp0`
     __ sldi(temp1, temp0, 4);       // Left shift immediate `temp0` by 4 bits and store in `temp1`
@@ -3745,7 +3745,7 @@ class StubGenerator: public StubCodeGenerator {
 
     __ divdu(s2, s2, base);
     __ mulld(temp0, s2, base);
-    __ subf(s2, s2, temp0);
+    __ sub(s2, s2, temp0);
     
     //__ bind(L_combine);
     //s1 = 0x00001234 (lower 16 bits)
@@ -3753,7 +3753,7 @@ class StubGenerator: public StubCodeGenerator {
     // s2 << 16 => 0x56780000
     // s1 | (s2 << 16) => 0x56781234
     __ bind(L_combine);
-    __ sldi(s2, s2, 16);
+    __ slwi(s2, s2, 16);
     __ orr(s1, s1, s2);
     __ blr();
     return start;
