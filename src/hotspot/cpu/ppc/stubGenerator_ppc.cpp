@@ -3578,13 +3578,18 @@ class StubGenerator: public StubCodeGenerator {
     __ load_const(nmax, NMAX);
     // Load the address of _adler_table
    
-    static jubyte   _adler_table[] = {
-    16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1
+    static unsigned char adler_table[] = {
+     16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1
     }; 
 
-    __ load_const_optimized(temp0, &_adler_table, tmp, false);
+
+
+
+    __ load_const_optimized(temp0, (address)&adler_table, tmp, false);
+  //  __ load_const_optimized(temp0, &_adler_table, tmp, false);
     // Load data from temp0 to vector register vtable
     __ lvx(vtable, temp0);
+
 
     // s1 initialised to lower 16 bits of adler
     // s2 initialised to upper 16 bits of adler
@@ -3602,13 +3607,13 @@ class StubGenerator: public StubCodeGenerator {
     // The pipelined loop needs at least 16 elements for 1 iteration
     // It does check this, but it is more effective to skip to the cleanup loop
     __ cmpwi(CCR0, len, 16); // len>=temp0?i
-    __ bge(CCR0, L_nmax); // bge -> greater than and equal, if true branch -L_nmax
+    __ bgt(CCR0, L_nmax); // bge -> greater than and equal, if true branch -L_nmax
     __ cmpwi(CCR1, len, 0);
     __ beq(CCR1, L_combine); // if CCR1 == 0 goto L_combine
     //loop body
     __ bind(L_simple_by1_loop); //beginning of the loop
     __ lbz(temp0, 1, buff); //  Load a byte from memory to temp0 by adding 1 to the register value
-   // __ addi(buff, buff, 1);
+    __ addi(buff, buff, 1);
     __ add(s1, s1, temp0);  // s1 <- s1 + temp0
     __ add(s2, s2, s1); // s2 <- s1 + s2
     __ subi(len, len, 1);  // len <- len - 1
@@ -3711,7 +3716,7 @@ class StubGenerator: public StubCodeGenerator {
    // __ std(0, 0, R17);
     __ lbz(temp0, 1, buff); 
     
-    //__ addi(buff, buff, 1);
+    __ addi(buff, buff, 1);
     __ add(s1, s1, temp0);
     __ add(s2, s2, s1);
     __ subi(len, len, 1);
@@ -3753,7 +3758,7 @@ class StubGenerator: public StubCodeGenerator {
     // s2 << 16 => 0x56780000
     // s1 | (s2 << 16) => 0x56781234
     __ bind(L_combine);
-    __ slwi(s2, s2, 16);
+    __ sldi(s2, s2, 16);
     __ orr(s1, s1, s2);
     __ blr();
     return start;
@@ -3763,10 +3768,10 @@ class StubGenerator: public StubCodeGenerator {
                                          VectorRegister vs2acc, VectorRegister vtable) {
     //load data
     
-    __ lvebx(vbytes, buff);
+    __ lvx(vbytes, buff);
     __ addi(buff, buff, 16);
     // s2 = s2 + s1 * 16
-    __ mulli(s1, s1, 16);
+    __ mulld(s1, s1, 16);
     __ add(s2, s2, s1);
 
     //vs1acc = b1 + b2 + b3 + ... + b16
