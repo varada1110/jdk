@@ -3069,6 +3069,260 @@ class StubGenerator: public StubCodeGenerator {
      return start;
   }
 
+#define BLK_OFFSETOF(x) (offsetof(constant_block, x))  
+#define ARRAY_TO_LXV_ORDER(e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15) e15, e14, e13, e12, e11, e10, e9, e8, e7, e6, e5, e4, e3, e2, e1, e0
+
+  address generate_updateBytesAdler32() {
+    __ align(CodeEntryAlignment);
+    StubGenStubId stub_id = StubGenStubId::updateBytesAdler32_id;
+    StubCodeMark mark(this, stub_id);
+    address start = __ function_entry(); 
+
+
+    Label L_nmax, L_combine, L_simple_by1_loop, L_s1_done, L_by16, L_nmax_loop, L_by1, L_by16_loop, L_by1_loop, L_do_mod;
+
+    Register adler  = R2;
+    Register s1     = R3;
+    Register s2     = R4;
+    Register buff   = R5;
+    Register len    = R8;
+    Register nmax  = R9;
+    Register base  = R10;
+    Register count = R11;
+    Register temp0 = R6;
+    Register temp1 = R7;
+    VectorRegister vbytes = VR0;
+    VectorRegister vs1acc = VR1;
+    VectorRegister vs2acc = VR2;
+    VectorRegister vtable = VR3;
+    VectorRegister vtemp0 = VR4;
+    VectorRegister vtemp1 = VR5;
+
+    VectorRegister table          = VR6;
+    Register const_ptr     = R12;  // used for loading constants
+    Register tmp_reg       = R13;
+
+    typedef struct {
+       unsigned char table_val[16];
+    } constant_block;
+
+    alignas(16) static const constant_block const_block = {
+        .table_val = {
+           ARRAY_TO_LXV_ORDER(
+               1, 2, 3, 4, 5, 6, 7, 8,
+               9, 10, 11, 12, 13, 14, 15, 16
+           )
+      }
+    };
+
+    // Max number of bytes we can process before having to take the mod
+    // 0x15B0 is 5552 in decimal, the largest n such that 255n(n+1)/2 + (n+1)(BASE-1) <= 2^32-1
+    const uint64_t BASE = 0xfff1;
+    const uint64_t NMAX = 0x15B0;
+
+    __ load_const32(base, BASE);
+    __ load_const32(nmax, NMAX);
+
+    __ load_const_optimized(const_ptr, (address)&const_block, tmp_reg);
+    __ lxv(table->to_vsr(), BLK_OFFSETOF(table_val), const_ptr);
+
+    // Init s1, s2 from adler (R3)
+    __ rlwinm(s2, adler, 16, 16, 31);   // s2 = (adler >> 16) & 0xffff
+    __ rlwinm(s1, adler, 0, 16, 31);    // s1 = adler & 0xffff
+
+    __ cmpdi(CR0, len, 16);              // len >= 16?
+    __ bge(CR0, L_nmax);
+    __ cmpdi(CR0, len, 0);
+    __ beq(CR0, L_combine);
+
+    __ bind(L_simple_by1_loop);
+
+    __ lbz(temp0, 0, buff);
+    __ addi(buff, buff, 1);
+    __ add(s1, s1, temp0);
+    __ add(s2, s2, s1);
+    __ subi(len, len, 1);
+    __ cmpdi(CR0, len, 0);
+    __ bne(CR0, L_simple_by1_loop);
+
+    // s1 %= BASE
+    __ sub(temp0, s1, base);
+    __ cmpd(CR1, temp0, s1);
+    __ blt(CR1, L_s1_done);
+    __ mr(s1, temp0);
+
+    __ bind(L_s1_done);
+
+    // s2 %= BASE
+    __ srwi(temp0, s2, 16); // R4 = R4 % BASE
+    __ slwi(temp1, temp0, 4);
+    __ sub(temp1, temp1, temp0);
+    __ rlwinm(temp0, s2, 0, 16, 31);
+    __ add(temp1, temp1, temp0);
+
+    __ srwi(temp0, temp1, 16);
+    __ slwi(s2, temp0, 4);
+    __ sub(s2, s2, temp0);
+    __ add(s2, s2, temp1);
+
+    __ sub(temp0, s2, R10);
+    __ cmpd(CR1, temp0, s2);
+    __ blr();
+    __ mr(s2, temp0);
+
+    __ b(L_combine);
+
+    __ bind(L_nmax);
+    __ cmpd(CR0, count, nmax);
+    __ blt(CR0, L_by16);
+    __ li(count, 5536);       //count = NMAX - 16
+
+    __ bind(L_nmax_loop);
+    updateBytesAdler32_accum(s1, s2, buff, temp0, temp1, vbytes, vs1acc,
+                             vs2acc, vtable, vtemp0, vtemp1);
+    __ subi(count, count, 16);
+    __ cmpdi(CR0, count, 0);
+    __ bge(CR0, L_nmax_loop);
+
+    __ srwi(temp0, s1, 16);
+    __ slwi(temp1, temp0, 4);
+    __ sub(temp1, temp1, temp0);
+    __ rlwinm(temp0, s1, 0, 16, 31);
+    __ add(temp1, temp1, temp0);
+
+    __ srwi(temp0, temp1, 16);
+    __ slwi(s1, temp0, 4);
+    __ sub(s1, s1, temp0);
+    __ add(s1, s1, temp1);
+
+    __ sub(temp0, s1, base);
+    __ cmpd(CR0, temp0, s1);
+    __ blr();
+    __ mr(s1, temp0);
+
+    __ srwi(temp0, s2, 16);
+    __ slwi(temp1, temp0, 4);
+    __ sub(temp1, temp1, temp0);
+    __ rlwinm(temp0, s2, 0, 16, 31);
+    __ add(temp1, temp1, temp0);
+
+    __ srwi(temp0, temp1, 16);
+    __ slwi(s2, temp0, 4);
+    __ sub(s2, s2, temp0);
+    __ add(s2, s2, temp1);
+
+    __ sub(temp0, s2, base);
+    __ cmpd(CR0, temp0, s2);
+    __ blr();
+    __ mr(s2, temp0);
+
+    __ subi(len, len, 5552);
+    __ li(temp0, 5536);
+    __ cmpd(CR1, len, nmax);
+    __ bge(CR1, L_nmax_loop);
+
+    __ bind(L_by16);
+    __ add(len, len, count);
+    __ cmpdi(CR1, len, 16);
+    __ blt(CR1, L_by1);
+
+    __ bind(L_by16_loop);
+    updateBytesAdler32_accum(s1, s2, buff, temp0, temp1, vbytes, vs1acc,
+                             vs2acc, vtable, vtemp0, vtemp1);
+    __ subi(len, len, 16);
+    __ cmpdi(CR1, len, 16);
+    __ bge(CR1, L_by16_loop);
+
+    __ bind(L_by1);
+    __ addi(len, len, 15);
+    __ cmpdi(CR0, len, 0);
+    __ blt(CR0, L_do_mod);
+
+    __ bind(L_by1_loop);
+    __ lbz(temp0, 0, buff);
+    __ addi(buff, buff, 1);
+    __ add(s1, s1, temp0);
+    __ add(s2, s2, s1);
+    __ subi(len, len, 1);
+    __ cmpdi(CR0, len, 0);
+    __ bge(CR0, L_by1_loop);
+
+    __ bind(L_do_mod);
+
+    __ srwi(temp0, s1, 16);
+    __ slwi(temp1, temp0, 4);
+    __ sub(temp1, temp1, temp0);
+    __ rlwinm(temp0, s1, 0, 16, 31);
+    __ add(temp1, temp1, temp0);
+
+    __ srwi(temp0, temp1, 16);
+    __ slwi(s1, temp0, 4);
+    __ sub(s1, s1, temp0);
+    __ add(s1, s1, temp1);
+
+    __ sub(temp0, s1, base);
+    __ cmpd(CR0, temp0, s1);
+    __ blr();
+    __ mr(s1, temp0);
+
+    __ srwi(temp0, s2, 16);
+    __ slwi(temp1, temp0, 4);
+    __ sub(temp1, temp1, temp0);
+    __ rlwinm(temp0, s2, 0, 16, 31);
+    __ add(temp1, temp1, temp0);
+
+    __ srwi(temp0, temp1, 16);
+    __ slwi(s2, temp0, 4);
+    __ sub(s2, s2, temp0);
+    __ add(s2, s2, temp1);
+
+    __ sub(temp0, s2, R10);
+    __ cmpd(CR0, temp0, s2);
+    __ blr();
+    __ mr(s2, temp0);
+
+    __ bind(L_combine);
+    __ slwi(s2, s2, 16);
+    __ orr(s1, s1, R4);
+    __ blr();
+    return start;
+  }
+
+  void updateBytesAdler32_accum(Register s1, Register s2, Register buff,
+            Register temp0, Register temp1, VectorRegister vbytes, VectorRegister vs1acc,
+            VectorRegister vs2acc, VectorRegister vtable, VectorRegister vtemp0, VectorRegister vtemp1) {
+    // Load 16 bytes from buffer into v0
+    __ lvx(vbytes, buff);
+    __ addi(buff, buff, 16);      // buff += 16
+
+    // s2 += s1 * 16
+    __ sldi(temp0, s1, 4);      // temp0 = s1 << 4
+    __ add(s2, s2, temp0);      // s2 += s1 * 16
+
+    // Multiply byte vector by vtable weights (16..1)
+    __ vmuleub(vtemp0, vtable, vbytes);     // even bytes * weights → v4
+    __ vmuloub(vtemp1, vtable, vbytes);     // odd bytes * weights  → v5
+
+    // Sum byte values for s1 update
+    __ vsum4ubs(vs1acc, vbytes, vbytes);     // Horizontal add of bytes into 4 words
+    __ vsldoi(vs1acc, vs1acc, vs1acc, 8);  // Shift to combine partials
+    __ vsldoi(vs1acc, vs1acc, vs1acc, 4);
+    __ mfvsrd(temp0, vs1acc->to_vsr());         // s1_accum = scalar
+
+    // Sum v4 and v5 into v2
+    __ vadduhm(vs2acc, vtemp0, vtemp1);
+    __ vsum4shs(vs2acc, vs2acc, vs2acc);     // Horizontal add into 4 words
+    __ vsldoi(vs2acc, vs2acc, vs2acc, 8);
+    __ vsldoi(vs2acc, vs2acc, vs2acc, 4);
+    __ mfvsrd(temp1, vs2acc->to_vsr());        // s2_accum = scalar
+
+    // Update s1 and s2
+    __ add(s1, s1, temp0);
+    __ add(s2, s2, temp1);
+
+    __ blr();
+  }
+
   address generate_sha256_implCompress(StubGenStubId stub_id) {
     assert(UseSHA, "need SHA instructions");
     bool multi_block;
@@ -4931,6 +5185,11 @@ void generate_lookup_secondary_supers_table_stub() {
     if (UseAESIntrinsics) {
       StubRoutines::_aescrypt_encryptBlock = generate_aescrypt_encryptBlock();
       StubRoutines::_aescrypt_decryptBlock = generate_aescrypt_decryptBlock();
+    }
+
+    // generate Adler32 intrinsics code
+    if (UseAdler32Intrinsics) {
+      StubRoutines::_updateBytesAdler32 = generate_updateBytesAdler32();
     }
 
     if (UseSHA256Intrinsics) {
