@@ -4099,6 +4099,13 @@ public abstract class ByteVector extends AbstractVector<Byte> {
         return this;
     }
 
+    @Override
+    @ForceInline
+    final
+    ByteVector maybeSwapOnConverted(ByteOrder bo) {
+        return this;
+    }
+
     static final int ARRAY_SHIFT =
         31 - Integer.numberOfLeadingZeros(Unsafe.ARRAY_BYTE_INDEX_SCALE);
     static final long ARRAY_BASE =

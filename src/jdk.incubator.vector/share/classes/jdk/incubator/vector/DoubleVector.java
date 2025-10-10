@@ -3612,6 +3612,28 @@ public abstract class DoubleVector extends AbstractVector<Double> {
         return this;
     }
 
+    @Override
+    @ForceInline
+    final
+    DoubleVector maybeSwapOnConverted(ByteOrder bo) {
+        if (bo == ByteOrder.BIG_ENDIAN) {
+            VectorShuffle<Double> shuffle = shuffleSwapPairsForSpecies(this.vspecies());
+            return this.rearrange(shuffle);
+       }
+       return this;
+    }
+
+    @ForceInline
+    private static <T> VectorShuffle<T> shuffleSwapPairsForSpecies(AbstractSpecies<T> species) {
+        int lanes = species.laneCount();
+        int[] map = new int[lanes];
+        for (int i = 0; i < lanes; i += 2) {
+            map[i]     = i + 1;
+            map[i + 1] = i;
+        }
+        return VectorShuffle.fromArray(species, map, 0);
+    }
+
     static final int ARRAY_SHIFT =
         31 - Integer.numberOfLeadingZeros(Unsafe.ARRAY_DOUBLE_INDEX_SCALE);
     static final long ARRAY_BASE =

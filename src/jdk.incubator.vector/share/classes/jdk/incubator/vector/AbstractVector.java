@@ -182,7 +182,7 @@ abstract class AbstractVector<E> extends Vector<E> {
     final AbstractVector<?> asVectorRawTemplate(LaneType laneType) {
         // NOTE:  This assumes that convert0('X')
         // respects REGISTER_ENDIAN order.
-        return convert0('X', vspecies().withLanes(laneType));
+        return convert0('X', vspecies().withLanes(laneType)).maybeSwapOnConverted(java.nio.ByteOrder.nativeOrder());
     }
 
     /*package-private*/
@@ -241,6 +241,8 @@ abstract class AbstractVector<E> extends Vector<E> {
 
     /*package-private*/
     abstract AbstractVector<E> maybeSwap(ByteOrder bo);
+
+    abstract AbstractVector<E> maybeSwapOnConverted(ByteOrder bo);
 
     /*package-private*/
     @ForceInline
