@@ -3615,23 +3615,17 @@ public abstract class DoubleVector extends AbstractVector<Double> {
     @Override
     @ForceInline
     final
-    DoubleVector maybeSwapOnConverted(ByteOrder bo) {
-        if (bo == ByteOrder.BIG_ENDIAN) {
-            VectorShuffle<Double> shuffle = shuffleSwapPairsForSpecies(this.vspecies());
+    DoubleVector maybeSwapOnConverted(ByteOrder bo, AbstractSpecies<?> srcSpecies) {
+        if (bo == java.nio.ByteOrder.BIG_ENDIAN) {
+            int sBytes = srcSpecies.elementSize();
+            int tBytes = this.vspecies().elementSize(); // 2 for short
+            if (sBytes == tBytes) return this;
+            if (sBytes % tBytes != 0) return this; // or handle error
+            int subLanesPerSrc = sBytes / tBytes; // e.g. 8/2 = 4
+            VectorShuffle<Double> shuffle = normalizeSubLanesForSpecies(this.vspecies(), subLanesPerSrc);
             return this.rearrange(shuffle);
-       }
-       return this;
-    }
-
-    @ForceInline
-    private static <T> VectorShuffle<T> shuffleSwapPairsForSpecies(AbstractSpecies<T> species) {
-        int lanes = species.laneCount();
-        int[] map = new int[lanes];
-        for (int i = 0; i < lanes; i += 2) {
-            map[i]     = i + 1;
-            map[i + 1] = i;
         }
-        return VectorShuffle.fromArray(species, map, 0);
+        return this;
     }
 
     static final int ARRAY_SHIFT =
