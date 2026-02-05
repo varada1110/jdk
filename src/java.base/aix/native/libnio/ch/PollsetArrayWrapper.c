@@ -33,12 +33,15 @@
 
 #include <dlfcn.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <stddef.h>
+#include <sys/poll.h>
 #include <sys/pollset.h>
+#include <sys/fcntl.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
+static int POLLFD_SIZE = sizeof(struct pollfd);
 
 typedef pollset_t pollset_create_func(int maxfd);
 typedef int pollset_destroy_func(pollset_t ps);
@@ -63,7 +66,7 @@ Java_sun_nio_ch_Pollset_init(JNIEnv* env, jclass this) {
 
 JNIEXPORT jint JNICALL
 Java_sun_nio_ch_Pollset_eventSize(JNIEnv* env, jclass this) {
-    return sizeof(struct pollfd);
+    return POLLFD_SIZE;
 }
 
 JNIEXPORT jint JNICALL
@@ -105,6 +108,49 @@ Java_sun_nio_ch_Pollset_pollsetCtl(JNIEnv *env, jclass c, jint ps,
     RESTARTABLE(_pollset_ctl((pollset_t)ps, &event, 1 /* length */), res);
 
     return (res == 0) ? 0 : errno;
+}
+
+
+JNIEXPORT void JNICALL
+Java_sun_nio_ch_PollsetArrayWrapper_pollsetBulkCtl(JNIEnv *env, jobject this,
+                                jint pollsetFD, jlong address, jint count)
+{
+
+    /*
+     * Upon success, pollset_ctl returns 0. Upon failure, pollset_ctl returns the
+     * 0-based problem element number of the pollctl_array (for example, 2 is returned
+     * for element 3). If the first element is the problem element, or some other error
+     * occurs prior to processing the array of elements, -1 is returned and errno is
+     * set to the appropriate code. The calling application must acknowledge that elements
+     * in the array prior to the problem element were successfully processed and should
+     * attempt to call pollset_ctl again with the elements of pollctl_array beyond the
+     * problematic element0.
+     */
+
+    int res = 0;
+
+    while ( count > 0 ) {
+
+        res = (*pollset_ctl_func)(pollsetFD, address, count);
+
+        if (res == 0) {
+            break;
+        } else if (res == -1) {
+            if(errno == EINTR) {
+                continue;
+            }
+            address += POLLFD_SIZE;
+            count--;
+            continue;
+        } else {
+            address += ( res + 1 ) * POLLFD_SIZE;
+            count -= ( res + 1 );
+            continue;
+        }
+    }
+
+    return (res == 0) ? 0 : errno;
+
 }
 
 JNIEXPORT jint JNICALL
