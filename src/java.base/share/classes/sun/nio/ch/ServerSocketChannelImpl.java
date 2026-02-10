@@ -690,6 +690,20 @@ class ServerSocketChannelImpl
     }
 
     /**
+     * This method is added to support the pollset implementation.
+     * Translates an interest operation set into a native poll event set.
+     */
+    public void translateAndSetInterestOps(int ops, SelectionKeyImpl sk) {
+        int newOps = 0;
+
+        // Translate ops
+        if ((ops & SelectionKey.OP_ACCEPT) != 0)
+            newOps |= Net.POLLIN;
+        // Place ops into pollfd array
+        ((SelectorImpl) sk.selector()).putEventOps(sk, newOps);
+    }
+
+    /**
      * Translates an interest operation set into a native poll event set
      */
     public int translateInterestOps(int ops) {

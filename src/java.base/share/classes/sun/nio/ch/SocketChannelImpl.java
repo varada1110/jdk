@@ -117,6 +117,9 @@ class SocketChannelImpl
     private long readerThread;
     private long writerThread;
 
+    // This variable is added to support the pollset implementation.
+    private boolean readyToConnect = false;
+
     // Binding
     private SocketAddress localAddress;
     private SocketAddress remoteAddress;
@@ -702,16 +705,20 @@ class SocketChannelImpl
 
     @Override
     protected void implConfigureBlocking(boolean block) throws IOException {
-        readLock.lock();
-        try {
-            writeLock.lock();
+        if (System.getProperty("os.name").toLowerCase().contains("aix")) {
+            IOUtil.configureBlocking(fd, block);
+        } else {
+            readLock.lock();
             try {
-                lockedConfigureBlocking(block);
+                writeLock.lock();
+                try {
+                    lockedConfigureBlocking(block);
+                } finally {
+                    writeLock.unlock();
+                }
             } finally {
-                writeLock.unlock();
+                readLock.unlock();
             }
-        } finally {
-            readLock.unlock();
         }
     }
 
@@ -902,6 +909,27 @@ class SocketChannelImpl
                     state = ST_CONNECTED;
                 }
             }
+        }
+    }
+
+    // This method is added to support the pollset implementation.
+    private void readerCleanup() throws IOException {
+        synchronized (stateLock) {
+            readerThread = 0;
+            if (state == ST_KILLPENDING)
+                kill();
+        }
+    }
+
+    // This method is added to support the pollset implementation.
+    void ensureOpenAndUnconnected() throws IOException { // package-private
+        synchronized (stateLock) {
+            if (!isOpen())
+                throw new ClosedChannelException();
+            if (state == ST_CONNECTED)
+                throw new AlreadyConnectedException();
+            if (state == ST_CONNECTIONPENDING)
+                throw new ConnectionPendingException();
         }
     }
 

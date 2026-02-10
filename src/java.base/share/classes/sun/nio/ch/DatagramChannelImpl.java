@@ -1817,6 +1817,22 @@ class DatagramChannelImpl
     }
 
     /**
+     * This method is added to support the pollset implementation.
+     * Translates an interest operation set into a native poll event set.
+     */
+    public void translateAndSetInterestOps(int ops, SelectionKeyImpl sk) {
+        int newOps = 0;
+
+        if ((ops & SelectionKey.OP_READ) != 0)
+            newOps |= Net.POLLIN;
+        if ((ops & SelectionKey.OP_WRITE) != 0)
+            newOps |= Net.POLLOUT;
+        if ((ops & SelectionKey.OP_CONNECT) != 0)
+            newOps |= Net.POLLIN;
+        ((SelectorImpl) sk.selector()).putEventOps(sk, newOps);
+    }
+
+    /**
      * Translates native poll revent set into a ready operation set
      */
     public boolean translateReadyOps(int ops, int initialOps, SelectionKeyImpl ski) {
