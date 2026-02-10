@@ -64,6 +64,9 @@ public interface SelChImpl extends Channel {
      */
     boolean translateAndSetReadyOps(int ops, SelectionKeyImpl ski);
 
+    // This method is added to support the pollset implementation.
+    void translateAndSetInterestOps(int ops, SelectionKeyImpl sk);
+
     /**
      * Translates an interest operation set into a native event set
      */

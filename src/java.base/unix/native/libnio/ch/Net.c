@@ -984,6 +984,49 @@ Java_sun_nio_ch_Net_pollconnValue(JNIEnv *env, jclass this)
     return (jshort)POLLOUT;
 }
 
+
+/* This method is added to support the pollset implementation. */
+JNIEXPORT jint JNICALL
+Java_sun_nio_ch_SocketChannelImpl_checkConnectPollset(JNIEnv *env, jobject this,
+                                               jobject fdo, jboolean block,
+                                               jboolean ready)
+{
+    int error = 0;
+    socklen_t n = sizeof(int);
+    jint fd = fdval(env, fdo);
+    int result = 0;
+    struct pollfd poller;
+
+    poller.revents = 1;
+    if (!ready) {
+        poller.fd = fd;
+        poller.events = POLLOUT;
+        poller.revents = 0;
+        result = poll(&poller, 1, block ? -1 : 0);
+        if (result < 0) {
+            JNU_ThrowIOExceptionWithLastError(env, "Poll failed");
+            return IOS_THROWN;
+        }
+        if (!block && (result == 0))
+            return IOS_UNAVAILABLE;
+    }
+
+    if (poller.revents) {
+        errno = 0;
+        result = getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &n);
+        if (result < 0) {
+            handleSocketError(env, errno);
+            return JNI_FALSE;
+        } else if (error) {
+            handleSocketError(env, error);
+            return JNI_FALSE;
+        }
+        return 1;
+    }
+    return 0;
+}
+
+
 JNIEXPORT jint JNICALL
 Java_sun_nio_ch_Net_sendOOB(JNIEnv* env, jclass this, jobject fdo, jbyte b)
 {

@@ -102,13 +102,18 @@ public final class SelectionKeyImpl
     @Override
     public SelectionKey interestOps(int ops) {
         ensureValid();
-        if ((ops & ~channel().validOps()) != 0)
-            throw new IllegalArgumentException();
-        int oldOps = (int) INTERESTOPS.getAndSet(this, ops);
-        if (ops != oldOps) {
-            selector.setEventOps(this);
+        if(System.getProperty("os.name").toLowerCase().contains("aix")) {
+            return nioInterestOps(ops);
+        } else {
+            if ((ops & ~channel().validOps()) != 0)
+                throw new IllegalArgumentException();
+            int oldOps = (int) INTERESTOPS.getAndSet(this, ops);
+            if (ops != oldOps) {
+                selector.setEventOps(this);
+            }
+            return this;
         }
-        return this;
+
     }
 
     @Override
@@ -151,11 +156,27 @@ public final class SelectionKeyImpl
     }
 
     public SelectionKey nioInterestOps(int ops) {
-        if ((ops & ~channel().validOps()) != 0)
-            throw new IllegalArgumentException();
-        interestOps = ops;
-        selector.setEventOps(this);
-        return this;
+        if(System.getProperty("os.name").toLowerCase().contains("aix")) {
+            boolean bUpdateRequired = false;
+            if(selector instanceof SelectorImpl) {
+                bUpdateRequired = ((SelectorImpl)selector).isUpdateChannelsReq();
+            }
+            // the channel array.
+            if(bUpdateRequired) {
+                synchronized (selector.keys()) {
+                    interestOps = ops;
+                    if ((ops & ~channel().validOps()) != 0)
+                        throw new IllegalArgumentException();
+                    channel.translateAndSetInterestOps(ops, this);
+                }
+        } else {
+            if ((ops & ~channel().validOps()) != 0)
+                throw new IllegalArgumentException();
+            interestOps = ops;
+            selector.setEventOps(this);
+            return this;
+        }
+
     }
 
     public int nioInterestOps() {
