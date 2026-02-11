@@ -57,7 +57,7 @@ public abstract class SelectorImpl
     private final Set<SelectionKey> keys;
 
     // The set of keys with data ready for an operation
-    private final Set<SelectionKey> selectedKeys;
+    private Set<SelectionKey> selectedKeys;
 
     // Public views of the key sets
     private final Set<SelectionKey> publicKeys;             // Immutable
@@ -210,9 +210,9 @@ public abstract class SelectorImpl
     @Override
     public final void implCloseSelector() throws IOException {
         if (System.getProperty("os.name").toLowerCase().contains("aix")) {
-            Iterator i = keys.iterator();
+            Iterator<SelectionKey> i = keys.iterator();
             while ( i.hasNext() ) {
-                ((SelectionKey)i.next()).cancel();
+                (i.next()).cancel();
             }
             wakeup();
             synchronized (this) {

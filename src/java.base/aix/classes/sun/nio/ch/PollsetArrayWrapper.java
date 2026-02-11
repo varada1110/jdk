@@ -26,7 +26,6 @@ package sun.nio.ch;
 import java.io.IOException;
 import java.util.HashSet;
 import java.security.AccessController;
-import sun.security.action.GetPropertyAction;
 
 /**
  * The pollset application programming interface (API) efficiently poll a large file
@@ -381,7 +380,7 @@ class PollsetArrayWrapper {
     }
 
     private native int pollsetCreate(int maxfd);
-    private native int pollsetDestroy(int pollsetFD);
+    private native void pollsetDestroy(int pollsetFD);
     private native void pollsetCtl(int pollsetFd, short cmd, short events, int fd);
     private native void pollsetBulkCtl(int pollsetFd, long pollCtlArrayAddress, int count);
     private native int pollsetPoll(int pollsetFD, long pollAddress, int numfds, long timeout) throws IOException;

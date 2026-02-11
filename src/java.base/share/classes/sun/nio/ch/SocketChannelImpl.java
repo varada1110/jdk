@@ -916,7 +916,7 @@ class SocketChannelImpl
     private void readerCleanup() throws IOException {
         synchronized (stateLock) {
             readerThread = 0;
-            if (state == ST_KILLPENDING)
+            if (state == ST_CLOSED)
                 kill();
         }
     }
@@ -1589,6 +1589,29 @@ class SocketChannelImpl
             newOps |= Net.POLLCONN;
         return newOps;
     }
+
+
+
+    /**
+     * This method is added to support the pollset implementation.
+     * Translates an interest operation set into a native poll event set.
+     */
+    public void translateAndSetInterestOps(int ops, SelectionKeyImpl sk) {
+        int newOps = 0;
+        if ((ops & SelectionKey.OP_READ) != 0)
+            newOps |= Net.POLLIN;
+        if ((ops & SelectionKey.OP_WRITE) != 0)
+            newOps |= Net.POLLOUT;
+        if ((ops & SelectionKey.OP_CONNECT) != 0)
+            newOps |= Net.POLLCONN;
+        ((SelectorImpl) sk.selector()).putEventOps(sk, newOps);
+    }
+
+    // This method is added to support the pollset implementation.
+    private static native int checkConnectPollset(FileDescriptor fd,
+                                           boolean block, boolean ready)
+        throws IOException;
+
 
     public FileDescriptor getFD() {
         return fd;

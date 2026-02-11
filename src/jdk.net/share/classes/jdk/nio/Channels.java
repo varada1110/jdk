@@ -231,6 +231,14 @@ public final class Channels {
             return newOps;
         }
 
+	/**
+         * Translates an interest operation set into a native poll event set.
+        */
+        public void translateAndSetInterestOps(int ops, SelectionKeyImpl sk) {
+            // Added because the parent class declares this method; no custom
+            // implementation is required here.
+        }
+
         @Override
         protected void implConfigureBlocking(boolean block) throws IOException {
             IOUtil.configureBlocking(fd, block);

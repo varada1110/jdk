@@ -115,8 +115,8 @@ class PollsetSelectorImpl
         int numKeysUpdated = 0;
         for (int i=0; i<entries; i++) {
             int nextFD = pollWrapper.getDescriptor(i);
-            SelectionKeyImpl ski = (SelectionKeyImpl) fdToKey.get(
-                    new Integer(nextFD));
+
+            SelectionKeyImpl ski = fdToKey.get(nextFD);
             // ski is null in the case of an interrupt
             if (ski != null) {
                 int rOps = pollWrapper.getEventOps(i);
@@ -167,7 +167,7 @@ class PollsetSelectorImpl
 
     protected void implRegister(SelectionKeyImpl ski) {
         int fd = IOUtil.fdVal(((SelChImpl) ski.channel()).getFD());
-        fdToKey.put(new Integer(fd), ski);
+        fdToKey.put(fd, ski);
         pollWrapper.add(fd);
         keySet().add(ski);
     }
@@ -175,7 +175,7 @@ class PollsetSelectorImpl
     protected void implDereg(SelectionKeyImpl ski) throws IOException {
         assert (ski.getIndex() >= 0);
         int fd = ((SelChImpl) ski.channel()).getFDVal();
-        fdToKey.remove(new Integer(fd));
+        fdToKey.remove(fd);
         pollWrapper.release(fd);
         ski.setIndex(-1);
         keySet().remove(ski);

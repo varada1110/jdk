@@ -159,7 +159,7 @@ public final class SelectionKeyImpl
         if(System.getProperty("os.name").toLowerCase().contains("aix")) {
             boolean bUpdateRequired = false;
             if(selector instanceof SelectorImpl) {
-                bUpdateRequired = ((SelectorImpl)selector).isUpdateChannelsReq();
+                bUpdateRequired = selector.isUpdateChannelsReq();
             }
             // the channel array.
             if(bUpdateRequired) {
@@ -169,13 +169,20 @@ public final class SelectionKeyImpl
                         throw new IllegalArgumentException();
                     channel.translateAndSetInterestOps(ops, this);
                 }
+	    } else {
+		interestOps = ops;
+		if ((ops & ~channel().validOps()) != 0)
+			throw new IllegalArgumentException();
+		channel.translateAndSetInterestOps(ops, this);
+	    }
         } else {
             if ((ops & ~channel().validOps()) != 0)
                 throw new IllegalArgumentException();
             interestOps = ops;
             selector.setEventOps(this);
-            return this;
         }
+	return this;
+	
 
     }
 

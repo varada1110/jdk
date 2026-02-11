@@ -46,14 +46,13 @@
         #define RTLD_DEFAULT (-1)
 #endif
 
-typedef int pollset_t;
-
-struct poll_ctl {
-        short cmd;
-        short events;
-        int fd;
-
+typedef struct poll_ctl {
+    short cmd;
+    short events;
+    int fd;
 } poll_ctl_t;
+
+typedef int pollset_t;
 
 static short POLLFD_SIZE = (short)(sizeof(struct pollfd));
 /*
@@ -62,7 +61,7 @@ static short POLLFD_SIZE = (short)(sizeof(struct pollfd));
 
 typedef int (*pollset_create_t) (int maxfd);
 typedef int (*pollset_destroy_t) (pollset_t ps);
-typedef int (*pollset_ctl_t) (pollset_t ps, struct poll_ctl_t *pollctl_array, int array_length);
+typedef int (*pollset_ctl_t) (pollset_t ps, poll_ctl_t *pollctl_array, int array_length);
 typedef int (*pollset_poll_t) (pollset_t ps, struct pollfd *polldata_array,
                                          int array_length, int timeout);
 static pollset_create_t pollset_create_func;
@@ -207,7 +206,7 @@ Java_sun_nio_ch_PollsetArrayWrapper_pollsetBulkCtl(JNIEnv *env, jobject this,
 
     while ( count > 0 ) {
 
-        res = (*pollset_ctl_func)(pollsetFD, address, count);
+        res = (*pollset_ctl_func)(pollsetFD, (poll_ctl_t *)(intptr_t) address, count);
 
         if (res == 0) {
             break;
@@ -263,7 +262,7 @@ Java_sun_nio_ch_PollsetArrayWrapper_interrupt(JNIEnv *env, jobject this, jint fd
     }
 }
 
-JNIEXPORT jint JNICALL
+JNIEXPORT void JNICALL
 Java_sun_nio_ch_PollsetArrayWrapper_pollsetDestroy(JNIEnv *env, jobject this, jint pollsetFD)
 {
     int fakebuf[1];
@@ -271,34 +270,4 @@ Java_sun_nio_ch_PollsetArrayWrapper_pollsetDestroy(JNIEnv *env, jobject this, ji
     if ((*pollset_destroy_func)(pollsetFD) < 0) {
         JNU_ThrowIOExceptionWithLastError(env,"pollset_destroy failed");
     }
-}
-
-JNIEXPORT void JNICALL
-Java_sun_nio_ch_Pollset_socketpair(JNIEnv* env, jclass clazz, jintArray sv) {
-    int sp[2];
-    if (socketpair(PF_UNIX, SOCK_STREAM, 0, sp) == -1) {
-        JNU_ThrowIOExceptionWithLastError(env, "socketpair failed");
-    } else {
-        jint res[2];
-        res[0] = (jint)sp[0];
-        res[1] = (jint)sp[1];
-        (*env)->SetIntArrayRegion(env, sv, 0, 2, &res[0]);
-    }
-}
-
-
-JNIEXPORT void JNICALL
-Java_sun_nio_ch_Pollset_drain1(JNIEnv *env, jclass cl, jint fd) {
-    int res;
-    char buf[1];
-    RESTARTABLE(read(fd, buf, 1), res);
-    if (res < 0) {
-        JNU_ThrowIOExceptionWithLastError(env, "drain1 failed");
-    }
-}
-
-JNIEXPORT void JNICALL
-Java_sun_nio_ch_Pollset_close0(JNIEnv *env, jclass c, jint fd) {
-    int res;
-    RESTARTABLE(close(fd), res);
 }
