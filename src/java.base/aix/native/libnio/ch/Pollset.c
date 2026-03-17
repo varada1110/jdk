@@ -24,21 +24,21 @@
  * questions.
  */
 
+#include <dlfcn.h>
+#include <unistd.h>
+#include <sys/resource.h>
+#include <sys/types.h>
+#include <sys/pollset.h>
+
 #include "jni.h"
 #include "jni_util.h"
 #include "jvm.h"
+#include "nio.h"
 #include "jlong.h"
-
+ 
 #include "sun_nio_ch_Pollset.h"
 
-#include <dlfcn.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <stddef.h>
-#include <sys/pollset.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <unistd.h>
+static short POLLFD_SIZE = (short)(sizeof(struct pollfd));
 
 typedef pollset_t pollset_create_func(int maxfd);
 typedef int pollset_destroy_func(pollset_t ps);
@@ -82,6 +82,16 @@ Java_sun_nio_ch_Pollset_fdOffset(JNIEnv* env, jclass this) {
 }
 
 JNIEXPORT jint JNICALL
+Java_sun_nio_ch_Pollset_fdLimit(JNIEnv *env, jclass this)
+{
+    struct rlimit rlp;
+    if (getrlimit(RLIMIT_NOFILE, &rlp) < 0) {
+        JNU_ThrowIOExceptionWithLastError(env, "getrlimit failed");
+    }
+    return (jint)rlp.rlim_cur;
+}
+
+JNIEXPORT jint JNICALL
 Java_sun_nio_ch_Pollset_pollsetCreate(JNIEnv *env, jclass c) {
     /* pollset_create can take the maximum number of fds, but we
      * cannot predict this number so we leave it at OPEN_MAX. */
@@ -104,7 +114,54 @@ Java_sun_nio_ch_Pollset_pollsetCtl(JNIEnv *env, jclass c, jint ps,
 
     RESTARTABLE(_pollset_ctl((pollset_t)ps, &event, 1 /* length */), res);
 
-    return (res == 0) ? 0 : errno;
+    if (res < 0 && errno != EBADF && errno != ENOENT && errno != EINVAL && errno != EPERM) {
+        JNU_ThrowIOExceptionWithLastError(env, "pollset_ctl failed");
+    }
+    return res;
+}
+
+JNIEXPORT void JNICALL
+Java_sun_nio_ch_PollsetArrayWrapper_pollsetBulkCtl(JNIEnv *env, jobject this,
+                                jint pollsetFD, jlong address, jint count)
+{
+
+    /*
+     * Upon success, pollset_ctl returns 0. Upon failure, pollset_ctl returns the
+     * 0-based problem element number of the pollctl_array (for example, 2 is returned
+     * for element 3). If the first element is the problem element, or some other error
+     * occurs prior to processing the array of elements, -1 is returned and errno is
+     * set to the appropriate code. The calling application must acknowledge that elements
+     * in the array prior to the problem element were successfully processed and should
+     * attempt to call pollset_ctl again with the elements of pollctl_array beyond the
+     * problematic element0.
+     */
+
+    int res = 0;
+
+    while ( count > 0 ) {
+
+        res = pollset_ctl(pollsetFD, (struct poll_ctl *)(intptr_t) address, count);
+
+        if (res == 0) {
+            break;
+        } else if (res == -1) {
+            if(errno == EINTR) {
+                continue;
+            }
+            address += POLLFD_SIZE;
+            count--;
+            continue;
+        } else {
+            address += ( res + 1 ) * POLLFD_SIZE;
+            count -= ( res + 1 );
+            continue;
+        }
+    }
+
+
+    if (res < 0 && errno != EBADF && errno != ENOENT && errno!=EINVAL && errno != EPERM ) {
+        JNU_ThrowIOExceptionWithLastError(env, "pollset_ctl failed");
+    }
 }
 
 JNIEXPORT jint JNICALL

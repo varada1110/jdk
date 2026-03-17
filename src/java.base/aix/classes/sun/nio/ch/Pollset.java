@@ -106,13 +106,18 @@ public class Pollset {
         return (revents & PS_POLLNVAL) != 0 || (revents & PS_POLLERR) != 0;
     }
 
+    static {
+	    init();
+    }
     // -- Native methods --
     public static native int pollsetCreate() throws IOException;
     public static native int pollsetCtl(int pollset, int opcode, int fd, int events);
     public static native int pollsetPoll(int pollset, long pollAddress, int numfds, int timeout)
         throws IOException;
     public static native void pollsetDestroy(int pollset);
+    public static native void pollsetBulkCtl(int pollsetFd, long pollCtlArrayAddress, int count);
     public static native void init();
+    public static native int fdLimit();
     public static native int eventSize();
     public static native int eventsOffset();
     public static native int reventsOffset();
