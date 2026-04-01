@@ -305,12 +305,15 @@ class PollsetSelectorImpl
         synchronized (interruptLock) {
             interruptTriggered = true;
         }
-        FileDispatcherImpl.closeIntFD(pfd);
-        Pollset.freePollArray(pollArrayAddress);
+        //FileDispatcherImpl.closeIntFD(pfd);
+        //Pollset.freePollArray(pollArrayAddress);
+	Pollset.pollsetCtl(pfd, Pollset.PS_DELETE, fd0, 0);
 
         FileDispatcherImpl.closeIntFD(fd0);
         FileDispatcherImpl.closeIntFD(fd1);
 
+	Pollset.freePollArray(pollArrayAddress);
+	FileDispatcherImpl.closeIntFD(pfd);
     }
 
     @Override
@@ -324,10 +327,10 @@ class PollsetSelectorImpl
 	int fd  =  ski.getFDVal();
 
         if (fdToKey.remove(fd) != null) {
-          //  if (ski.registeredEvents() != 0) {
+            if (ski.registeredEvents() != 0) {
                 Pollset.pollsetCtl(pfd, Pollset.PS_DELETE, fd, 0);
                 ski.registeredEvents(0);
-          //  }
+            }
         } else {
             assert ski.registeredEvents() == 0;
         }
@@ -347,14 +350,17 @@ class PollsetSelectorImpl
     @Override
     public Selector wakeup() {
         synchronized (interruptLock) {
-            if (!interruptTriggered) {
-                try {
-                    IOUtil.write1(fd1, (byte)0);
-                } catch (IOException ioe) {
-                    throw new InternalError(ioe);
-                }
-                interruptTriggered = true;
+            // If close has started, do nothing
+            if (interruptTriggered)
+                return this;
+
+            try {
+                IOUtil.write1(fd1, (byte)0);
+            } catch (IOException ioe) {
+                throw new InternalError(ioe);
             }
+
+            interruptTriggered = true;
         }
         return this;
     }
