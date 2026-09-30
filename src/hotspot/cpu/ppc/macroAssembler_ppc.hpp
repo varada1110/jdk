@@ -367,6 +367,7 @@ class MacroAssembler: public Assembler {
   // Call a C function via a function descriptor and use full C
   // calling conventions. Updates and returns _last_calls_return_pc.
   address call_c(Register function_entry);
+  static bool is_simple_call_c_at(address a);
   // For tail calls: only branch, don't link, so callee returns to caller of this function.
   address call_c_and_return_to_caller(Register function_entry);
   address call_c(address function_entry, relocInfo::relocType rt = relocInfo::none);
@@ -380,6 +381,7 @@ class MacroAssembler: public Assembler {
   address call_c(address function_entry, relocInfo::relocType rt = relocInfo::none) {
     return call_c((const FunctionDescriptor*)function_entry, rt);
   }
+  static bool is_simple_call_c_at(address a) { return false; }
   address call_c_using_toc(const FunctionDescriptor* function_descriptor, relocInfo::relocType rt,
                            Register toc);
 #endif
@@ -712,6 +714,8 @@ class MacroAssembler: public Assembler {
   void atomically_flip_locked_state(bool is_unlock, Register obj, Register tmp, Label& failed, int semantics);
   void fast_lock(Register box, Register obj, Register t1, Register t2, Label& slow);
   void fast_unlock(Register obj, Register t1, Label& slow);
+
+  void load_aotrc_address(Register reg, address a);
 
   // allocation (for C1)
   void tlab_allocate(

@@ -25,6 +25,7 @@
 
 #include "asm/macroAssembler.hpp"
 #include "cds/aotCacheAccess.hpp"
+#include "interpreter/interpreter.hpp"
 #include "cds/aotMetaspace.hpp"
 #include "cds/cds_globals.hpp"
 #include "cds/cdsConfig.hpp"
@@ -205,7 +206,7 @@ uint AOTCodeCache::max_aot_code_size() {
 // At this point all AOT class linking seetings are finilized
 // and AOT cache is open so we can map AOT code region.
 void AOTCodeCache::initialize() {
-#if defined(ZERO) || !(defined(AMD64) || defined(AARCH64) || defined(RISCV64))
+#if defined(ZERO) || !(defined(AMD64) || defined(AARCH64) || defined(RISCV64) || defined(PPC64)) 
   log_info(aot, codecache, init)("AOT Code Cache is not supported on this platform.");
   disable_caching();
   return;
@@ -2160,6 +2161,10 @@ void AOTCodeAddressTable::init_extrs() {
 #if defined(AMD64)
   ADD_EXTERNAL_ADDRESS(warning);
 #endif // defined(AMD64)
+#if defined(PPC64)  
+  // PPC Interpreter dispatch table base
+  ADD_EXTERNAL_ADDRESS(Interpreter::dispatch_table());
+#endif // defined(PPC64)
 #endif // ZERO
 
   // addresses of fields in AOT runtime constants area

@@ -47,6 +47,7 @@
 
 bool VM_Version::_is_determine_features_test_running = false;
 uint64_t VM_Version::_dscr_val = 0;
+const char* VM_Version::_features_names[num_features] = { nullptr };
 
 #define MSG(flag)   \
   if (flag && !FLAG_IS_DEFAULT(flag))                                  \
@@ -55,6 +56,9 @@ uint64_t VM_Version::_dscr_val = 0;
                   "         -XX:+" #flag " will be disabled!\n");
 
 void VM_Version::initialize() {
+   _features_names[mfdscr] = "mfdscr";
+   _features_names[darn]   = "darn";
+   _features_names[brw]    = "brw";	
 
   // Test which instructions are supported and measure cache line size.
   determine_features();
@@ -540,6 +544,55 @@ void VM_Version::determine_features() {
   assert(_L1_data_cache_line_size >= DEFAULT_CACHE_LINE_SIZE,
          "processors with smaller cache line size are no longer supported");
 }
+
+void VM_Version::insert_features_names(uint64_t features, stringStream& ss) {
+  int i = 0;
+  ss.join([&]() {
+    const char* str = nullptr;
+    while ((i < num_features) && (str == nullptr)) {
+      if ((features & (1ULL << i)) != 0) {
+        str = _features_names[i];
+      }
+      i += 1;
+    }
+    return str;
+  }, ", ");
+}
+
+void VM_Version::get_cpu_features_name(void* features_buffer, stringStream& ss) {
+  uint64_t features = *(uint64_t*)features_buffer;
+  insert_features_names(features, ss);
+}
+
+void VM_Version::get_missing_features_name(void* features_set1, void* features_set2, stringStream& ss) {
+  uint64_t vm_features_set1 = *(uint64_t*)features_set1;
+  uint64_t vm_features_set2 = *(uint64_t*)features_set2;
+  int i = 0;
+  ss.join([&]() {
+    const char* str = nullptr;
+    while ((i < num_features) && (str == nullptr)) {
+      if (((vm_features_set1 >> i) & 1) && !((vm_features_set2 >> i) & 1)) {
+        str = _features_names[i];
+      }
+      i += 1;
+    }
+    return str;
+  }, ", ");
+}
+
+int VM_Version::cpu_features_size() {
+  return sizeof(_features);  // sizeof(uint64_t) = 8
+}
+
+void VM_Version::store_cpu_features(void* buf) {
+  *(uint64_t*)buf = _features;
+}
+
+bool VM_Version::supports_features(void* features_buffer) {
+  uint64_t features_to_test = *(uint64_t*)features_buffer;
+  return (_features & features_to_test) == features_to_test;
+}
+
 
 // Power 8: Configure Data Stream Control Register.
 void VM_Version::config_dscr() {

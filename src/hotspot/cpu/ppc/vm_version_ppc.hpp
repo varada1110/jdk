@@ -55,6 +55,7 @@ public:
   // Initialization
   static void initialize();
   static void check_virtualizations();
+  static const char* _features_names[num_features];
 
   // Override Abstract_VM_Version implementation
   static void print_platform_virtualization_info(outputStream*);
@@ -86,6 +87,14 @@ public:
 
   static int get_dcache_line_size();
   static int get_icache_line_size();
+  static void insert_features_names(uint64_t features, stringStream& ss);
+
+  // AOT Code Cache support
+  static int  cpu_features_size();
+  static void store_cpu_features(void* buf);
+  static bool supports_features(void* features_buffer);
+  static void get_cpu_features_name(void* features_buffer, stringStream& ss);
+  static void get_missing_features_name(void* features_set1, void* features_set2, stringStream& ss);
 };
 
 #endif // CPU_PPC_VM_VERSION_PPC_HPP

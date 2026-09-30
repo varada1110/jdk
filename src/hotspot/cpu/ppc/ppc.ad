@@ -7954,6 +7954,32 @@ instruct addP_reg_imm34(iRegPdst dst, iRegP_N2P src1, immL34 src2) %{
   ins_alignment(2);
 %}
 
+// AOT Runtime Constants Address
+operand immAOTRuntimeConstantsAddress()
+%{
+  // Check if the address is in the range of AOT Runtime Constants
+  predicate(AOTRuntimeConstants::contains((address)(n->get_ptr())));
+  match(ConP);
+
+  op_cost(0);
+  format %{ %}
+  interface(CONST_INTER);
+%}
+
+instruct loadAOTRCAddress(iRegPdst dst, immAOTRuntimeConstantsAddress con)
+%{
+  match(Set dst con);
+
+  ins_cost(DEFAULT_COST);
+  format %{ "load_aotrc_address $dst, $con\t# AOT Runtime Constants Address" %}
+
+  ins_encode %{
+    __ load_aotrc_address($dst$$Register, (address)$con$$constant);
+  %}
+
+  ins_pipe(pipe_class_default);
+%}
+
 //---------------------
 // Subtraction Instructions
 

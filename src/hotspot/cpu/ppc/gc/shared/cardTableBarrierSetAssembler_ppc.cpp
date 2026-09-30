@@ -24,6 +24,7 @@
  */
 
 #include "asm/macroAssembler.inline.hpp"
+#include "code/aotCodeCache.hpp"
 #include "gc/shared/barrierSet.hpp"
 #include "gc/shared/cardTable.hpp"
 #include "gc/shared/cardTableBarrierSet.hpp"
@@ -116,7 +117,14 @@ void CardTableBarrierSetAssembler::gen_write_ref_array_post_barrier(MacroAssembl
   __ srdi(addr, addr, CardTable::card_shift());
   __ srdi(count, count, CardTable::card_shift());
   __ subf(count, addr, count);
-  __ add_const_optimized(addr, addr, (address)ctbs->card_table_base_const(), R0);
+#if INCLUDE_CDS
+  if (AOTCodeCache::is_on_for_dump()) {
+    __ load_const_optimized(preserve, AOTRuntimeConstants::card_table_base_address(), R0);
+    __ ld(preserve, 0, preserve);
+    __ add(addr, addr, preserve);
+  } else
+#endif  
+  __ add_const_optimized(addr, preserve, (address)ctbs->card_table_base_const(), R0);
   __ addi(count, count, 1);
   __ li(R0, 0);
   __ mtctr(count);

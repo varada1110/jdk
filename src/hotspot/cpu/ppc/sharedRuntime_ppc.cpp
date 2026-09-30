@@ -24,6 +24,7 @@
  */
 
 #include "asm/macroAssembler.inline.hpp"
+#include "code/aotCodeCache.hpp"
 #include "code/debugInfoRec.hpp"
 #include "code/compiledIC.hpp"
 #include "code/vtableStubs.hpp"
@@ -1009,7 +1010,11 @@ static void patch_callers_callsite(MacroAssembler *masm, int adapter_size, int t
   __ std(return_pc, _abi0(lr), R1_SP);
   RegisterSaver::push_frame_and_save_argument_registers(masm, tmp, adapter_size, total_args_passed, regs);
 
-  __ call_VM_leaf(CAST_FROM_FN_PTR(address, SharedRuntime::fixup_callers_callsite), R19_method, return_pc);
+  //__ call_VM_leaf(CAST_FROM_FN_PTR(address, SharedRuntime::fixup_callers_callsite), R19_method, return_pc);
+  __ mr(R3_ARG1, R19_method);
+  __ mr(R4_ARG2, return_pc);
+  // Relocation needed for AOTAdapterCaching
+  __ call_c(CAST_FROM_FN_PTR(address, SharedRuntime::fixup_callers_callsite), relocInfo::runtime_call_type);
 
   RegisterSaver::restore_argument_registers_and_pop_frame(masm, adapter_size, total_args_passed, regs);
   __ ld(return_pc, _abi0(lr), R1_SP);
@@ -1205,7 +1210,10 @@ static void gen_c2i_adapter(MacroAssembler *masm,
 
   // Jump to the interpreter just as if interpreter was doing it.
 
-  __ load_const_optimized(R25_templateTableBase, (address)Interpreter::dispatch_table((TosState)0), R11_scratch1);
+  //__ load_const_optimized(R25_templateTableBase, (address)Interpreter::dispatch_table((TosState)0), R11_scratch1);
+  address dispatch_table_addr = (address)Interpreter::dispatch_table();
+  __ relocate(external_word_Relocation::spec(dispatch_table_addr));
+  __ load_const(R25_templateTableBase, (address)0, R11_scratch1);
 
   // load TOS
   __ addi(R15_esp, R1_SP, st_off);
@@ -2985,6 +2993,11 @@ void SharedRuntime::generate_deopt_blob() {
   ResourceMark rm;
   // Setup code generation tools
   const char* name = SharedRuntime::stub_name(StubId::shared_deopt_id);
+   CodeBlob* blob = AOTCodeCache::load_code_blob(AOTCodeEntry::SharedBlob, BlobId::shared_deopt_id);
+  if (blob != nullptr) {
+    _deopt_blob = blob->as_deoptimization_blob();
+    return;
+  }
   CodeBuffer buffer(name, 2048, 1024);
   InterpreterMacroAssembler* masm = new InterpreterMacroAssembler(&buffer);
   Label exec_mode_initialized;
@@ -3181,7 +3194,7 @@ void SharedRuntime::generate_deopt_blob() {
 
   // Initialize R14_state.
   __ restore_interpreter_state(R11_scratch1);
-  __ load_const_optimized(R25_templateTableBase, (address)Interpreter::dispatch_table((TosState)0), R11_scratch1);
+  __ load_const_optimized(R25_templateTableBase, (address)Interpreter::dispatch_table(), R11_scratch1);
 
   // Return to the interpreter entry point.
   __ blr();
@@ -3194,14 +3207,19 @@ void SharedRuntime::generate_deopt_blob() {
   _deopt_blob = DeoptimizationBlob::create(&buffer, oop_maps, 0, exception_offset,
                                            reexecute_offset, first_frame_size_in_bytes / wordSize);
   _deopt_blob->set_unpack_with_exception_in_tls_offset(exception_in_tls_offset);
+  AOTCodeCache::store_code_blob(*_deopt_blob, AOTCodeEntry::SharedBlob, BlobId::shared_deopt_id);
 }
 
 #ifdef COMPILER2
 UncommonTrapBlob* OptoRuntime::generate_uncommon_trap_blob() {
+  const char* name = OptoRuntime::stub_name(StubId::c2_uncommon_trap_id);
+  CodeBlob* blob = AOTCodeCache::load_code_blob(AOTCodeEntry::C2Blob, BlobId::c2_uncommon_trap_id);
+  if (blob != nullptr) {
+    return blob->as_uncommon_trap_blob();
+  }	
   // Allocate space for the code.
   ResourceMark rm;
   // Setup code generation tools.
-  const char* name = OptoRuntime::stub_name(StubId::c2_uncommon_trap_id);
   CodeBuffer buffer(name, 2048, 1024);
   if (buffer.blob() == nullptr) {
     return nullptr;
@@ -3328,7 +3346,9 @@ UncommonTrapBlob* OptoRuntime::generate_uncommon_trap_blob() {
 
   // Code will be copied. No ICache sync required.
 
-  return UncommonTrapBlob::create(&buffer, oop_maps, frame_size_in_bytes/wordSize);
+  UncommonTrapBlob* ut_blob = UncommonTrapBlob::create(&buffer, oop_maps, frame_size_in_bytes/wordSize);
+  AOTCodeCache::store_code_blob(*ut_blob, AOTCodeEntry::C2Blob, BlobId::c2_uncommon_trap_id);
+  return ut_blob;
 }
 #endif // COMPILER2
 
@@ -3338,12 +3358,17 @@ SafepointBlob* SharedRuntime::generate_handler_blob(StubId id, address call_ptr)
          "must be generated before");
   assert(is_polling_page_id(id), "expected a polling page stub id");
 
+  const char* name = SharedRuntime::stub_name(id);
+  CodeBlob* blob = AOTCodeCache::load_code_blob(AOTCodeEntry::SharedBlob, StubInfo::blob(id));
+  if (blob != nullptr) {
+    return blob->as_safepoint_blob();
+  }
+
   ResourceMark rm;
   OopMapSet *oop_maps = new OopMapSet();
   OopMap* map;
 
   // Allocate space for the code. Setup code generation tools.
-  const char* name = SharedRuntime::stub_name(id);
   CodeBuffer buffer(name, 2048, 1024);
   MacroAssembler* masm = new MacroAssembler(&buffer);
 
@@ -3436,7 +3461,9 @@ SafepointBlob* SharedRuntime::generate_handler_blob(StubId id, address call_ptr)
 
   // Fill-out other meta info
   // CodeBlob frame size is in words.
-  return SafepointBlob::create(&buffer, oop_maps, frame_size_in_bytes / wordSize);
+  SafepointBlob* sp_blob = SafepointBlob::create(&buffer, oop_maps, frame_size_in_bytes / wordSize);
+  AOTCodeCache::store_code_blob(*sp_blob, AOTCodeEntry::SharedBlob, StubInfo::blob(id));
+  return sp_blob;
 }
 
 // generate_resolve_blob - call resolution (static/virtual/opt-virtual/ic-miss)
@@ -3449,10 +3476,15 @@ SafepointBlob* SharedRuntime::generate_handler_blob(StubId id, address call_ptr)
 RuntimeStub* SharedRuntime::generate_resolve_blob(StubId id, address destination) {
   assert(is_resolve_id(id), "expected a resolve stub id");
 
+  const char* name = SharedRuntime::stub_name(id);
+  CodeBlob* blob = AOTCodeCache::load_code_blob(AOTCodeEntry::SharedBlob, StubInfo::blob(id));
+  if (blob != nullptr) {
+    return blob->as_runtime_stub();
+  }
+
   // allocate space for the code
   ResourceMark rm;
 
-  const char* name = SharedRuntime::stub_name(id);
   CodeBuffer buffer(name, 1000, 512);
   MacroAssembler* masm = new MacroAssembler(&buffer);
 
@@ -3522,8 +3554,10 @@ RuntimeStub* SharedRuntime::generate_resolve_blob(StubId id, address destination
 
   // return the blob
   // frame_size_words or bytes??
-  return RuntimeStub::new_runtime_stub(name, &buffer, frame_complete, frame_size_in_bytes/wordSize,
-                                       oop_maps, true);
+  RuntimeStub* rs_blob = RuntimeStub::new_runtime_stub(name, &buffer, frame_complete, frame_size_in_bytes/wordSize,
+                                        oop_maps, true);
+  AOTCodeCache::store_code_blob(*rs_blob, AOTCodeEntry::SharedBlob, StubInfo::blob(id));
+  return rs_blob;
 }
 
 // Continuation point for throwing of implicit exceptions that are
@@ -3551,6 +3585,10 @@ RuntimeStub* SharedRuntime::generate_throw_exception(StubId id, address runtime_
   assert(is_throw_id(id), "expected a throw stub id");
 
   const char* name = SharedRuntime::stub_name(id);
+  CodeBlob* blob = AOTCodeCache::load_code_blob(AOTCodeEntry::SharedBlob, StubInfo::blob(id));
+  if (blob != nullptr) {
+    return blob->as_runtime_stub();
+  }
 
   ResourceMark rm;
   const char* timer_msg = "SharedRuntime generate_throw_exception";
@@ -3618,6 +3656,7 @@ RuntimeStub* SharedRuntime::generate_throw_exception(StubId id, address runtime_
                                   frame_size_in_bytes/wordSize,
                                   oop_maps,
                                   false);
+  AOTCodeCache::store_code_blob(*stub, AOTCodeEntry::SharedBlob, StubInfo::blob(id));
   return stub;
 }
 
@@ -3881,7 +3920,12 @@ RuntimeStub* SharedRuntime::generate_return_value_stub(address destination) {
 // It returns a jobject handle to the event writer.
 // The handle is dereferenced and the return value is the event writer oop.
 RuntimeStub* SharedRuntime::generate_jfr_write_checkpoint() {
+  StubId id = StubId::shared_jfr_write_checkpoint_id;	
   const char* name = SharedRuntime::stub_name(StubId::shared_jfr_write_checkpoint_id);
+  CodeBlob* blob = AOTCodeCache::load_code_blob(AOTCodeEntry::SharedBlob, StubInfo::blob(id));
+  if (blob != nullptr) {
+    return blob->as_runtime_stub();
+  }
   CodeBuffer code(name, 512, 64);
   MacroAssembler* masm = new MacroAssembler(&code);
 
@@ -3913,12 +3957,18 @@ RuntimeStub* SharedRuntime::generate_jfr_write_checkpoint() {
     RuntimeStub::new_runtime_stub(name, &code, frame_complete,
                                   (framesize >> (LogBytesPerWord - LogBytesPerInt)),
                                   oop_maps, false);
+  AOTCodeCache::store_code_blob(*stub, AOTCodeEntry::SharedBlob, StubInfo::blob(id));
   return stub;
 }
 
 // For c2: call to return a leased buffer.
 RuntimeStub* SharedRuntime::generate_jfr_return_lease() {
   const char* name = SharedRuntime::stub_name(StubId::shared_jfr_return_lease_id);
+  StubId id = StubId::shared_jfr_return_lease_id;
+  CodeBlob* blob = AOTCodeCache::load_code_blob(AOTCodeEntry::SharedBlob, StubInfo::blob(id));
+  if (blob != nullptr) {
+    return blob->as_runtime_stub();
+  }
   CodeBuffer code(name, 512, 64);
   MacroAssembler* masm = new MacroAssembler(&code);
 
@@ -3948,6 +3998,7 @@ RuntimeStub* SharedRuntime::generate_jfr_return_lease() {
     RuntimeStub::new_runtime_stub(name, &code, frame_complete,
                                   (framesize >> (LogBytesPerWord - LogBytesPerInt)),
                                   oop_maps, false);
+  AOTCodeCache::store_code_blob(*stub, AOTCodeEntry::SharedBlob, StubInfo::blob(id));
   return stub;
 }
 #endif // INCLUDE_JFR

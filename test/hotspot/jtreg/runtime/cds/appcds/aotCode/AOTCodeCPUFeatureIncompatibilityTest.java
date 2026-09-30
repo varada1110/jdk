@@ -27,7 +27,6 @@
  * @summary CPU feature compatibility test for AOT Code Cache
  * @requires vm.cds.supports.aot.code.caching
  * @requires vm.compMode != "Xcomp" & vm.compMode != "Xint"
- * @requires os.simpleArch == "x64" | os.simpleArch == "aarch64" | os.simpleArch == "riscv64"
  * @comment The test verifies AOT checks during VM startup and not code generation.
  *          No need to run it with -Xcomp.
  * @library /test/lib /test/setup_aot
@@ -79,6 +78,11 @@ public class AOTCodeCPUFeatureIncompatibilityTest {
                 testIncompatibleFeature("-XX:-UseZba", "zba", IncompatibilityMode.MISSING);
                 testIncompatibleFeature("-XX:-UseZba", "zba", IncompatibilityMode.ADDITIONAL);
             }
+       } else if (Platform.isPPC()) {
+            if (isSHASupported(cpuFeatures)) {
+                testIncompatibleFeature("-XX:-UseSHA", "sha", IncompatibilityMode.MISSING);
+                testIncompatibleFeature("-XX:-UseSHA", "sha", IncompatibilityMode.ADDITIONAL);
+            }	    
         }
     }
 
@@ -161,4 +165,8 @@ public class AOTCodeCPUFeatureIncompatibilityTest {
     static boolean isZbaSupported(List<String> cpuFeatures) {
         return cpuFeatures.contains("zba");
     }
+
+    static boolean isSHASupported(List<String> cpuFeatures) {
+	 return cpuFeatures.contains("sha");
+    }	 
 }

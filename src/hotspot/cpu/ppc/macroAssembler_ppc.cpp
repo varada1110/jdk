@@ -1043,8 +1043,18 @@ address MacroAssembler::call_c_and_return_to_caller(Register r_function_entry) {
 }
 
 address MacroAssembler::call_c(address function_entry, relocInfo::relocType rt) {
+  if (rt != relocInfo::none) {
+    relocate(rt);
+  }	
   load_const(R12, function_entry, R0);
   return branch_to(R12,  /*and_link=*/true);
+}
+
+bool MacroAssembler::is_simple_call_c_at(address a) {
+  uint32_t* instruction = (uint32_t*)a;
+  return is_load_const_at(a) &&
+         is_mtctr(instruction[5]) &&
+         is_bctrl(instruction[6]);
 }
 
 #else
@@ -3177,6 +3187,20 @@ void MacroAssembler::get_vm_result_metadata(Register metadata_result) {
 
 Register MacroAssembler::encode_klass_not_null(Register dst, Register src) {
   Register current = (src != noreg) ? src : dst; // Klass is in dst if no src provided.
+  if (AOTCodeCache::is_on_for_dump()) {
+    assert(CompressedKlassPointers::shift() == ArchiveBuilder::precomputed_narrow_klass_shift(),
+              "unexpected compressed klass shift!");
+    load_const_optimized(R0, CompressedKlassPointers::base_addr());
+    ld(R0, 0, R0);
+    subf(dst, R0, current);
+    current = dst;
+    if (CompressedKlassPointers::shift() != 0) {
+      srdi(dst, current, CompressedKlassPointers::shift());
+      current = dst;
+    }
+    return current;
+  }
+
   if (CompressedKlassPointers::base() != nullptr) {
     // Use dst as temp if it is free.
     sub_const_optimized(dst, current, CompressedKlassPointers::base(), R0);
@@ -3216,6 +3240,15 @@ void MacroAssembler::decode_klass_not_null(Register dst, Register src) {
   if (CompressedKlassPointers::base() != nullptr) {
     add_const_optimized(dst, shifted_src, CompressedKlassPointers::base(), R0);
   }
+  if (AOTCodeCache::is_on_for_dump()) {
+    assert(CompressedKlassPointers::shift() == ArchiveBuilder::precomputed_narrow_klass_shift(),
+              "unexpected compressed klass shift!");
+    load_const_optimized(R0, CompressedKlassPointers::base_addr());
+    ld(R0, 0, R0);
+    add(dst, shifted_src, R0);
+    return;
+  }
+
 }
 
 void MacroAssembler::load_klass_no_decode(Register dst, Register src) {
@@ -4718,21 +4751,25 @@ void MacroAssembler::verify_oop_addr(RegisterOrConstant offs, Register base, con
 
 // Call a C-function that prints output.
 void MacroAssembler::stop(int type, const char* msg) {
-  bool msg_present = (msg != nullptr);
-
+  // Skip AOT caching C strings in scratch buffer.
+  const char* str = (code_section()->scratch_emit()) ? msg : AOTCodeCache::add_C_string(msg);
+  bool msg_present = (str != nullptr);
 #ifndef PRODUCT
-  block_comment(err_msg("stop(type %d): %s {", type, msg_present ? msg : "null"));
+  block_comment(err_msg("stop(type %d): %s {", type, msg_present ? str : "null"));
 #else
   block_comment("stop {");
 #endif
+  // load msg into R0 so we can access it from the signal handler
+  // ExternalAddress enables saving and restoring via the code cache
+  load_const_optimized(R0, (address)str);  
 
   if (msg_present) {
     type |= stop_msg_present;
   }
   tdi_unchecked(traptoUnconditional, 0/*reg 0*/, type);
-  if (msg_present) {
-    emit_int64((uintptr_t)msg);
-  }
+  //if (msg_present) {
+    //emit_int64((uintptr_t)msg);
+//  }
 
   block_comment("} stop;");
 }
@@ -5015,4 +5052,18 @@ int MacroAssembler::extend_stack_for_value_args(int args_on_stack) {
 
 VMReg MacroAssembler::spill_reg_for(VMReg reg) {
   Unimplemented();
+}
+
+void MacroAssembler::load_aotrc_address(Register reg, address a) {
+#if INCLUDE_CDS
+  assert(AOTRuntimeConstants::contains(a), "address out of range for data area");
+  if (AOTCodeCache::is_on_for_dump()) {
+    // all aotrc field addresses should be registered in the AOTCodeCache address table
+    load_const_optimized(reg, a, R0);
+  } else {
+    li(reg, (uint64_t)a);
+  }
+#else
+  ShouldNotReachHere();
+#endif
 }

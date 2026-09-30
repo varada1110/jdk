@@ -240,7 +240,7 @@ class StubGenerator: public StubCodeGenerator {
       assert(tos != r_arg_thread && R19_method != r_arg_thread, "trashed r_arg_thread");
 
       // Set R15_prev_state to 0 for simplifying checks in callee.
-      __ load_const_optimized(R25_templateTableBase, (address)Interpreter::dispatch_table((TosState)0), R0);
+      __ load_const_optimized(R25_templateTableBase, (address)Interpreter::dispatch_table(), R0);
       // Stack on entry to template interpreter / native entry:
       //
       //      F0      [TOP_IJAVA_FRAME_ABI]
